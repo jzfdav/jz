@@ -93,7 +93,17 @@ Reports (Markdown / Mermaid)
 
 ## 🛠️ Installation
 
+### Option 1: Install to GOBIN (Recommended)
+
+This compiles `jz` and places it in your `$GOPATH/bin` (usually `~/go/bin`). Ensure this directory is in your `$PATH`.
+
+```bash
+go install ./cmd/jz
 ```
+
+### Option 2: Build Locally
+
+```bash
 go build -o jz ./cmd/jz
 ```
 
