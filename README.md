@@ -9,93 +9,107 @@ It extracts architecture, dependencies, and workflows **without executing the sy
 
 ---
 
-## 🚩 The Problem
+## 🚀 Quick Start (Liberty WAR example)
 
-Modern enterprise Java systems often suffer from:
+If you are working on a repository that follows the WebSphere Liberty WAR model (non-OSGi), `jz` treats the entire repository as a single service and groups endpoints by resource class.
 
-- 30+ microservices or bundles
-- Mixed build systems (Ant + Maven)
-- OSGi Declarative Services wiring spread across XML
-- REST endpoints scattered across large codebases
-- Poor or outdated documentation
-- High onboarding cost for new engineers
+```bash
+# Scan and view a summary
+jz scan .
+```
 
-When joining such a team, questions like these are hard to answer:
+### Example Output
+```markdown
+# System Overview
+- Total number of services: 1
+- Total number of system-level dependencies: 0
 
-- What services exist?
-- How do they depend on each other?
-- Which service provides which interface?
-- What breaks if I change this component?
-- Where are the REST entry points?
+## Diagnostics
+- Liberty WAR service detected.
+- OSGi bundles not found; modeled as a single Liberty service.
 
-`jz` exists to answer those questions **from code alone**.
+# Services
+## my-web-app
+- Root Path: /Users/dev/repo
+- REST Entry Points: 16
+- Liberty Server: defaultServer
 
----
+### REST Resources
+#### TenantApiV1
+Base path: /api/v1/tenants
+Auth: @RolesAllowed
+Consumes: application/json
+Produces: application/json
+Path Params: tenantId
 
-## 🎯 What jz Does
+- GET     /api/v1/tenants
+- POST    /api/v1/tenants
+- GET     /api/v1/tenants/{tenantId}
 
-`jz` performs **static analysis** and builds an **Intermediate Representation (IR)** of the system, from which it generates:
-
-### Service-level insights
-- OSGi bundle discovery
-- Declarative Service (DS) components
-- Provided and referenced interfaces
-- Internal component dependency graphs
-
-### API insights
-- JAX-RS REST entry points
-- HTTP method, path, handler mapping
-
-### Runtime context (static)
-- WebSphere Liberty `server.xml`
-- Enabled features
-- Deployed applications (without guessing runtime resolution)
-
-### Architecture visualizations
-- System-level service dependency graphs
-- Component-level dependency graphs (per service)
-- Mermaid diagrams for quick visualization
-
-All of this is done **without running the application**.
+Methods summary:
+- GET: 12
+- POST: 4
+```
 
 ---
 
-## 🧠 Design Philosophy
+## 🔍 Runtime Detection Logic
 
-`jz` is intentionally designed to be:
+`jz` uses the following flags to determine how to model your codebase:
 
-### Deterministic
-- No inference
-- No guessing
-- No heuristics beyond what is explicitly encoded
+- **HasOSGi**: Set if `META-INF/MANIFEST.MF` files are found with OSGi headers. `jz` will model each bundle as a separate service.
+- **HasLiberty**: Set if a `server.xml` is detected anywhere in the tree.
+- **HasLibertyWAR**: Set when **no OSGi bundles** are found, but a Liberty configuration exists with a `webApplication` entry or a `WEB-INF/web.xml` file.
 
-### IR-first
-- All analysis produces a structured IR
-- Reports are generated *from* the IR
+**For Liberty WAR repos:**
+- The repository is modeled as **one logical service**.
+- REST resources are grouped by their implementation class.
+- System-level dependencies are usually empty (unless multiple services are detected).
 
-### Cleanly layered
+---
 
-CLI (Cobra)
-↓
-Application Layer (Analyze)
-↓
-IR + Graphs
-↓
-Reports (Markdown / Mermaid)
+## 🧠 AST-lite Scanning
 
-### Safe for legacy systems
-- No code execution
-- No classloading
-- No runtime dependencies
-- Read-only filesystem access
+`jz` avoids the overhead of a full Java parser or the fragility of raw regex by using a line-based "AST-lite" approach:
+
+- **Line-by-line scanning**: Reads Java files to find JAX-RS annotations and class declarations.
+- **No constant resolution**: Does not resolve constants (e.g., `@Path(Constants.BASE)` is not resolved).
+- **No array-based detection**: `@Consumes({"a", "b"})` is not currently parsed.
+- **No inheritance**: Class-level metadata is extracted from the immediate source file only.
+- **Deterministic**: Results are stable and never inferred or guessed.
+- **Safe**: Does not load your classes or execute bytecode.
+
+---
+
+## 📊 Visualizations
+
+Generated via `jz report mermaid .`.
+
+### System Graph
+For Liberty WAR services, these appear as a single node labeled with `(WAR)`.
+
+```mermaid
+graph TD
+    my_app[my-app (WAR)]
+```
+
+### Component Graph
+For OSGi services, `jz` visualizes internal Declarative Service (DS) wiring.
+
+---
+
+## 🛑 What jz Does NOT do (yet)
+
+- **No inter-resource call graphs**: Cannot yet show how one REST resource calls another.
+- **No auth propagation**: Does not track if a user’s role is checked across service boundaries.
+- **No schema modeling**: Does not parse POJOs for request/response bodies.
+- **No dependency inference**: Does not guess service dependencies based on imports or library usage.
 
 ---
 
 ## 🛠️ Installation
 
 ### Option 1: Install to GOBIN (Recommended)
-
-This compiles `jz` and places it in your `$GOPATH/bin` (usually `~/go/bin`). Ensure this directory is in your `$PATH`.
 
 ```bash
 go install ./cmd/jz
@@ -104,34 +118,35 @@ go install ./cmd/jz
 ### Option 2: Build Locally
 
 ```bash
-go build -o jz ./cmd/jz
+mkdir -p bin
+go build -o bin/jz ./cmd/jz
 ```
 
 ---
 
 ## 🚀 Usage
 
+```bash
+jz scan .                          # Quick Markdown summary
+jz report markdown .               # Full Markdown report
+jz report mermaid .                # Generate Mermaid diagrams
 ```
-jz scan /path/to/codebase
-jz report markdown /path/to/codebase
-jz report mermaid /path/to/codebase
-```
+
+Both `report` commands support `--service` to filter by name and `--output` to save to a file.
 
 ---
 
-## 🎯 High-Value Flags
+## 🔮 Phase F4 – Planned: Cross-Resource and Cross-Service Analysis
 
-### --service <name>
+*Status: Not implemented yet.*
 
-```
-jz report markdown /path/to/codebase --service com.example.orders
-```
+Upcoming goals include:
+- **Call graph inference**: Visualizing interactions between different REST resources.
+- **Internal Boundary Detection**: Identifying hidden service boundaries inside giant WAR files.
+- **Auth Propagation**: Tracking security context across service calls for risk visibility.
+- **Multi-service Liberty support**: Better modeling of EAR files and sidecar deployments.
 
-### --output <file>
-
-```
-jz report mermaid /path/to/codebase --output architecture.mmd
-```
+Analysis will remain incremental and opt-in, preserving the tool's performance and safety.
 
 ---
 
