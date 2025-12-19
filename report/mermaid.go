@@ -30,6 +30,8 @@ func GenerateSystemMermaid(services []model.Service, sysGraph model.SystemGraph)
 	for _, svcName := range sysGraph.Services {
 		label := svcName
 		// Check if this is a Liberty WAR service
+		// Intentional O(n²) scan: Service counts are expected to be small, and this
+		// approach favors code clarity over premature optimization.
 		for _, s := range services {
 			if s.Name == svcName && s.Application.Type == "webApplication" {
 				label += " (WAR)"
