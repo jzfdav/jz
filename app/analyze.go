@@ -15,6 +15,7 @@ type Diagnostic struct {
 	HasOSGi          bool
 	HasLiberty       bool
 	AnyManifestFound bool
+	HasLibertyWAR    bool
 }
 
 // Analyze performs static analysis on the given root directory.
@@ -79,6 +80,7 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph, Diagnostic) {
 	// 4. Assemble Services
 	var services []model.Service
 
+	// 4a. OSGi Services
 	for _, bundle := range bundles {
 		// Determine Service Root (parent of META-INF)
 		metaInfDir := filepath.Dir(bundle.ManifestPath)
@@ -127,6 +129,55 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph, Diagnostic) {
 		}
 
 		services = append(services, svc)
+	}
+
+	// 4b. Phase F2: Liberty WAR Service Support
+	// Detect when no OSGi bundles are present and Liberty is used.
+	if len(services) == 0 && hasLiberty {
+		var hasWebApp bool
+		var libertyApp model.LibertyApp
+
+		// Check for webApplication in server.xml
+		for _, app := range libertyServer.DeployedApps {
+			if app.Type == "webApplication" {
+				hasWebApp = true
+				libertyApp = app
+				break
+			}
+		}
+
+		// Check for WEB-INF/web.xml if not already found via server.xml
+		if !hasWebApp {
+			filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return nil
+				}
+				if !info.IsDir() && info.Name() == "web.xml" && filepath.Base(filepath.Dir(path)) == "WEB-INF" {
+					hasWebApp = true
+					return filepath.SkipDir
+				}
+				return nil
+			})
+		}
+
+		if hasWebApp {
+			diag.HasLibertyWAR = true
+
+			name := libertyApp.ID
+			if name == "" {
+				name = filepath.Base(rootDir)
+			}
+
+			svc := model.Service{
+				Name:        name,
+				RootPath:    rootDir,
+				EntryPoints: entryPoints, // All entry points in repo
+				ServerName:  libertyServer.Name,
+				Features:    libertyServer.EnabledFeatures,
+				Application: libertyApp,
+			}
+			services = append(services, svc)
+		}
 	}
 
 	// 5. Build System Graph

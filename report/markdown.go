@@ -20,7 +20,10 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 	// Diagnostics section
 	if !diag.HasOSGi {
 		sb.WriteString("## Diagnostics\n\n")
-		if diag.HasLiberty {
+		if diag.HasLibertyWAR {
+			sb.WriteString("- Liberty WAR service detected.\n")
+			sb.WriteString("- OSGi bundles not found; modeled as a single Liberty service.\n")
+		} else if diag.HasLiberty {
 			if !diag.AnyManifestFound {
 				sb.WriteString("- No MANIFEST.MF files found.\n")
 			}
