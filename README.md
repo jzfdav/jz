@@ -1,5 +1,8 @@
 # jz — Understand Large Java Backends Without Running Them
 
+> ⚠️ **Note**: This project is **vibe coded**. It was rapidly prototyped with AI assistance. While it works, standard engineering rigor may vary.
+
+
 `jz` is a **static analysis CLI tool** designed to help engineers understand **large, legacy, multi-service Java systems**—especially those built with **OSGi**, **JAX-RS**, **Ant/Maven**, and deployed on **WebSphere Liberty**.
 
 It extracts architecture, dependencies, and workflows **without executing the system**, making it safe, fast, and suitable for unfamiliar or production-critical codebases.
