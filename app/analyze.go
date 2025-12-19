@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bufio"
 	"fmt"
 	"jz/graph"
 	"jz/model"
@@ -204,22 +205,29 @@ func groupRESTResources(eps []model.EntryPoint) []model.RESTResource {
 
 	var resources []model.RESTResource
 	for name, groupEps := range groups {
+		sourceFile := groupEps[0].SourceFile
+		basePath := extractClassPath(sourceFile, name)
+
 		res := model.RESTResource{
 			Name:        name,
-			SourceFile:  groupEps[0].SourceFile,
+			SourceFile:  sourceFile,
+			BasePath:    basePath,
 			Methods:     make([]model.RESTMethod, 0),
 			HTTPMethods: make(map[string]int),
 			EntryPoints: groupEps,
 		}
 
-		// Phase F3.2: Deeper REST Modeling
-		// We don't have separate class-level path in raw EntryPoint yet,
-		// so FullPath equals the EntryPoint.Path.
+		// Phase F3.3: Correct SubPath and FullPath computation
 		for _, ep := range groupEps {
+			subPath := ep.Path
+			if basePath != "" && strings.HasPrefix(ep.Path, basePath) {
+				subPath = strings.TrimPrefix(ep.Path, basePath)
+			}
+
 			method := model.RESTMethod{
 				HTTPMethod: ep.Method,
-				SubPath:    ep.Path, // Placeholder: currently mirrors FullPath until class-level @Path modeling is implemented
-				FullPath:   ep.Path,
+				SubPath:    normalizePath(subPath),
+				FullPath:   joinPaths(basePath, subPath),
 				Handler:    ep.Handler,
 				SourceFile: ep.SourceFile,
 			}
@@ -230,4 +238,72 @@ func groupRESTResources(eps []model.EntryPoint) []model.RESTResource {
 		resources = append(resources, res)
 	}
 	return resources
+}
+
+// extractClassPath performs a lightweight scan of a Java file to find the class-level @Path.
+func extractClassPath(javaFilePath string, className string) string {
+	f, err := os.Open(javaFilePath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	var latestPath string
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+
+		// Detect @Path
+		if strings.HasPrefix(line, "@Path") {
+			start := strings.Index(line, "\"")
+			if start != -1 {
+				end := strings.LastIndex(line, "\"")
+				if end > start {
+					latestPath = line[start+1 : end]
+				}
+			}
+			continue
+		}
+
+		// Detect class declaration (AST-lite)
+		if (strings.Contains(line, "class ") || strings.Contains(line, "interface ")) && strings.Contains(line, className) {
+			parts := strings.Fields(line)
+			for i, p := range parts {
+				if (p == "class" || p == "interface") && i+1 < len(parts) {
+					actualName := strings.Split(parts[i+1], "{")[0]
+					if actualName == className {
+						return normalizePath(latestPath)
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// normalizePath ensures a path starts with /, uses correct slashes, and has no duplicates.
+func normalizePath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	p = filepath.ToSlash(p)
+	for strings.Contains(p, "//") {
+		p = strings.ReplaceAll(p, "//", "/")
+	}
+	if len(p) > 1 && strings.HasSuffix(p, "/") {
+		p = strings.TrimSuffix(p, "/")
+	}
+	return p
+}
+
+// joinPaths safely joins two path segments.
+func joinPaths(base, sub string) string {
+	return normalizePath(base + "/" + sub)
 }
