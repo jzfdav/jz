@@ -58,9 +58,26 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 		}
 
 		if len(svc.RESTResources) > 0 {
-			sb.WriteString("### REST Resources\n")
+			sb.WriteString("### REST Resources\n\n")
 			for _, res := range svc.RESTResources {
-				sb.WriteString(fmt.Sprintf("- %s (%d endpoints)\n", res.Name, len(res.EntryPoints)))
+				sb.WriteString(fmt.Sprintf("#### %s\n", res.Name))
+				if res.BasePath != "" {
+					sb.WriteString(fmt.Sprintf("Base path: %s\n\n", res.BasePath))
+				} else {
+					sb.WriteString("\n")
+				}
+
+				for _, m := range res.Methods {
+					sb.WriteString(fmt.Sprintf("- %-7s %s\n", m.HTTPMethod, m.FullPath))
+				}
+
+				if len(res.HTTPMethods) > 0 {
+					sb.WriteString("\nMethods summary:\n")
+					for m, count := range res.HTTPMethods {
+						sb.WriteString(fmt.Sprintf("- %s: %d\n", m, count))
+					}
+				}
+				sb.WriteString("\n")
 			}
 		}
 

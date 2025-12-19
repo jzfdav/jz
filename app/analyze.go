@@ -207,8 +207,25 @@ func groupRESTResources(eps []model.EntryPoint) []model.RESTResource {
 		res := model.RESTResource{
 			Name:        name,
 			SourceFile:  groupEps[0].SourceFile,
+			Methods:     make([]model.RESTMethod, 0),
+			HTTPMethods: make(map[string]int),
 			EntryPoints: groupEps,
 		}
+
+		// Phase F3.2: Deeper REST Modeling
+		// We don't have separate class-level path in raw EntryPoint yet,
+		// so FullPath equals the EntryPoint.Path.
+		for _, ep := range groupEps {
+			method := model.RESTMethod{
+				HTTPMethod: ep.Method,
+				FullPath:   ep.Path,
+				Handler:    ep.Handler,
+				SourceFile: ep.SourceFile,
+			}
+			res.Methods = append(res.Methods, method)
+			res.HTTPMethods[ep.Method]++
+		}
+
 		resources = append(resources, res)
 	}
 	return resources
