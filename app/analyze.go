@@ -241,6 +241,10 @@ func groupRESTResources(eps []model.EntryPoint) []model.RESTResource {
 }
 
 // extractClassPath performs a lightweight scan of a Java file to find the class-level @Path.
+// This is an AST-lite scan: it finds the first class or interface declaration
+// matching className and returns the closest preceding @Path annotation.
+// Method-level @Path annotations found after the class declaration are ignored.
+// Interfaces annotated with @Path are treated the same as classes.
 func extractClassPath(javaFilePath string, className string) string {
 	f, err := os.Open(javaFilePath)
 	if err != nil {
@@ -286,9 +290,10 @@ func extractClassPath(javaFilePath string, className string) string {
 }
 
 // normalizePath ensures a path starts with /, uses correct slashes, and has no duplicates.
+// If the input is empty, it returns an empty string to preserve semantics.
 func normalizePath(p string) string {
 	if p == "" {
-		return "/"
+		return ""
 	}
 	if !strings.HasPrefix(p, "/") {
 		p = "/" + p
@@ -305,5 +310,11 @@ func normalizePath(p string) string {
 
 // joinPaths safely joins two path segments.
 func joinPaths(base, sub string) string {
+	if base == "" {
+		return normalizePath(sub)
+	}
+	if sub == "" {
+		return normalizePath(base)
+	}
 	return normalizePath(base + "/" + sub)
 }
