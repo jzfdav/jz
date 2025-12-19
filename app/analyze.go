@@ -12,10 +12,10 @@ import (
 
 // Diagnostic holds information about what was detected during analysis.
 type Diagnostic struct {
-	HasOSGi          bool
-	HasLiberty       bool
-	AnyManifestFound bool
-	HasLibertyWAR    bool
+	HasOSGi          bool // OSGi bundles detected
+	HasLiberty       bool // Liberty runtime detected (e.g., server.xml)
+	AnyManifestFound bool // Any MANIFEST.MF found (OSGi or otherwise)
+	HasLibertyWAR    bool // Liberty WAR application modeled as a single service (Phase F2)
 }
 
 // Analyze performs static analysis on the given root directory.

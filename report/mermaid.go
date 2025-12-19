@@ -7,7 +7,7 @@ import (
 )
 
 // GenerateSystemMermaid creates a Mermaid graph for system-level dependencies.
-func GenerateSystemMermaid(sysGraph model.SystemGraph) string {
+func GenerateSystemMermaid(services []model.Service, sysGraph model.SystemGraph) string {
 	var sb strings.Builder
 	sb.WriteString("graph TD\n")
 
@@ -19,13 +19,6 @@ func GenerateSystemMermaid(sysGraph model.SystemGraph) string {
 		sb.WriteString(fmt.Sprintf("\t%s -->|%s| %s\n", from, dep.Interface, to))
 	}
 
-	// If no dependencies, lift isolated nodes just to show them?
-	// Requirements say: "If there are no system-level dependencies: Generate a diagram with services only (no edges)"
-	// So we should list all services as nodes to ensure they appear even if isolated.
-	// But Mermaid handles nodes implicitly if they are in edges.
-	// We need to explicitly list isolated nodes if they are not in edges.
-	// Or better: list ALL nodes to be safe and ensure consistent naming.
-
 	// Create a set of nodes involved in edges
 	involved := make(map[string]bool)
 	for _, dep := range sysGraph.Dependencies {
@@ -33,11 +26,19 @@ func GenerateSystemMermaid(sysGraph model.SystemGraph) string {
 		involved[dep.ToService] = true
 	}
 
-	// List nodes that are NOT involved or just all nodes with labels?
-	// Simpler: Just list all nodes to define them.
-	for _, svc := range sysGraph.Services {
-		id := sanitize(svc)
-		sb.WriteString(fmt.Sprintf("\t%s[%s]\n", id, svc))
+	// List all nodes with labels
+	for _, svcName := range sysGraph.Services {
+		label := svcName
+		// Check if this is a Liberty WAR service
+		for _, s := range services {
+			if s.Name == svcName && s.Application.Type == "webApplication" {
+				label += " (WAR)"
+				break
+			}
+		}
+
+		id := sanitize(svcName)
+		sb.WriteString(fmt.Sprintf("\t%s[%s]\n", id, label))
 	}
 
 	return sb.String()

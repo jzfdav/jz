@@ -41,7 +41,7 @@ var reportMermaidCmd = &cobra.Command{
 		var sb strings.Builder
 
 		// System Level
-		sb.WriteString(report.GenerateSystemMermaid(sysGraph))
+		sb.WriteString(report.GenerateSystemMermaid(services, sysGraph))
 		sb.WriteString("\n")
 
 		// Component Level (per service)
