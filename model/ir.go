@@ -14,6 +14,9 @@ type Service struct {
 	ServerName  string
 	Features    []string
 	Application LibertyApp
+
+	// REST Resources (grouped entry points)
+	RESTResources []RESTResource
 }
 
 // EntryPoint represents a REST entry point.
@@ -22,6 +25,7 @@ type EntryPoint struct {
 	Path       string
 	Handler    string
 	SourceFile string
+	Resource   string // Resource class name (derived from handler)
 }
 
 // DSComponent represents an OSGi Declarative Service.

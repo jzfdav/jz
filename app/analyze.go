@@ -55,6 +55,12 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph, Diagnostic) {
 		fmt.Fprintf(os.Stderr, "Error scanning JAX-RS entry points: %v\n", err)
 		os.Exit(1)
 	}
+	for i := range entryPoints {
+		parts := strings.Split(entryPoints[i].Handler, ".")
+		if len(parts) > 0 {
+			entryPoints[i].Resource = parts[0]
+		}
+	}
 
 	// 3. Find and Parse Liberty Server (if exists)
 	var libertyServer model.LibertyServer
@@ -128,6 +134,9 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph, Diagnostic) {
 			}
 		}
 
+		// Group REST Resources
+		svc.RESTResources = groupRESTResources(svc.EntryPoints)
+
 		services = append(services, svc)
 	}
 
@@ -176,6 +185,7 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph, Diagnostic) {
 				Features:    libertyServer.EnabledFeatures,
 				Application: libertyApp,
 			}
+			svc.RESTResources = groupRESTResources(svc.EntryPoints)
 			services = append(services, svc)
 		}
 	}
@@ -184,4 +194,22 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph, Diagnostic) {
 	sysGraph := graph.BuildSystemGraph(services)
 
 	return services, sysGraph, diag
+}
+
+func groupRESTResources(eps []model.EntryPoint) []model.RESTResource {
+	groups := make(map[string][]model.EntryPoint)
+	for _, ep := range eps {
+		groups[ep.Resource] = append(groups[ep.Resource], ep)
+	}
+
+	var resources []model.RESTResource
+	for name, groupEps := range groups {
+		res := model.RESTResource{
+			Name:        name,
+			SourceFile:  groupEps[0].SourceFile,
+			EntryPoints: groupEps,
+		}
+		resources = append(resources, res)
+	}
+	return resources
 }

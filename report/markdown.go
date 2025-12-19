@@ -56,6 +56,14 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 				sb.WriteString(fmt.Sprintf("  - %s\n", f))
 			}
 		}
+
+		if len(svc.RESTResources) > 0 {
+			sb.WriteString("### REST Resources\n")
+			for _, res := range svc.RESTResources {
+				sb.WriteString(fmt.Sprintf("- %s (%d endpoints)\n", res.Name, len(res.EntryPoints)))
+			}
+		}
+
 		sb.WriteString("\n")
 	}
 
