@@ -12,12 +12,64 @@ import (
 )
 
 func main() {
-	if len(os.Args) != 3 || os.Args[1] != "scan" {
-		fmt.Fprintf(os.Stderr, "Usage: jz scan <root-path>\n")
+	if len(os.Args) < 2 {
+		printUsage()
 		os.Exit(1)
 	}
 
-	rootDir := os.Args[2]
+	command := os.Args[1]
+
+	switch command {
+	case "scan":
+		if len(os.Args) != 3 {
+			printUsage()
+			os.Exit(1)
+		}
+		rootDir := os.Args[2]
+		services, sysGraph := analyze(rootDir)
+		fmt.Println(report.GenerateMarkdown(services, sysGraph))
+
+	case "report":
+		if len(os.Args) != 4 {
+			printUsage()
+			os.Exit(1)
+		}
+		subCmd := os.Args[2]
+		rootDir := os.Args[3]
+		services, sysGraph := analyze(rootDir)
+
+		switch subCmd {
+		case "markdown":
+			fmt.Println(report.GenerateMarkdown(services, sysGraph))
+		case "mermaid":
+			// System Level
+			fmt.Println(report.GenerateSystemMermaid(sysGraph))
+			// Component Level (per service)
+			for _, svc := range services {
+				// Only print if there are edges or nodes to show?
+				// Constraints say: "If a service has no internal dependencies: Generate a diagram with components only (no edges)"
+				// The GenerateComponentMermaid functions handles this by listing nodes.
+				fmt.Println(report.GenerateComponentMermaid(svc.InternalGraph))
+			}
+		default:
+			printUsage()
+			os.Exit(1)
+		}
+
+	default:
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+func printUsage() {
+	fmt.Fprintf(os.Stderr, "Usage:\n")
+	fmt.Fprintf(os.Stderr, "  jz scan <root-path>\n")
+	fmt.Fprintf(os.Stderr, "  jz report markdown <root-path>\n")
+	fmt.Fprintf(os.Stderr, "  jz report mermaid <root-path>\n")
+}
+
+func analyze(rootDir string) ([]model.Service, model.SystemGraph) {
 	if _, err := os.Stat(rootDir); os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "Error: directory '%s' does not exist\n", rootDir)
 		os.Exit(1)
@@ -120,6 +172,7 @@ func main() {
 				// Constraint says "Do NOT resolve application locations".
 				// So maybe we just check basic string containment/match if explicitly clear.
 				// Let's NOT guess too much.
+				// No complex resolution logic as per constraints
 			}
 		}
 
@@ -129,9 +182,5 @@ func main() {
 	// 5. Build System Graph
 	sysGraph := graph.BuildSystemGraph(services)
 
-	// 6. Generate Report
-	reportMD := report.GenerateMarkdown(services, sysGraph)
-
-	// 7. Output
-	fmt.Println(reportMD)
+	return services, sysGraph
 }
