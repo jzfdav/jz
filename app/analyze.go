@@ -218,6 +218,7 @@ func groupRESTResources(eps []model.EntryPoint) []model.RESTResource {
 		for _, ep := range groupEps {
 			method := model.RESTMethod{
 				HTTPMethod: ep.Method,
+				SubPath:    ep.Path, // Placeholder: currently mirrors FullPath until class-level @Path modeling is implemented
 				FullPath:   ep.Path,
 				Handler:    ep.Handler,
 				SourceFile: ep.SourceFile,
