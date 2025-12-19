@@ -8,6 +8,7 @@ import (
 	"jz/scan"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -206,33 +207,47 @@ func groupRESTResources(eps []model.EntryPoint) []model.RESTResource {
 	var resources []model.RESTResource
 	for name, groupEps := range groups {
 		sourceFile := groupEps[0].SourceFile
-		basePath := extractClassPath(sourceFile, name)
+		meta := scanResourceMetadata(sourceFile, name)
 
 		res := model.RESTResource{
-			Name:        name,
-			SourceFile:  sourceFile,
-			BasePath:    basePath,
-			Methods:     make([]model.RESTMethod, 0),
-			HTTPMethods: make(map[string]int),
-			EntryPoints: groupEps,
+			Name:            name,
+			SourceFile:      sourceFile,
+			BasePath:        meta.basePath,
+			AuthAnnotations: meta.auth,
+			Consumes:        meta.consumes,
+			Produces:        meta.produces,
+			Methods:         make([]model.RESTMethod, 0),
+			HTTPMethods:     make(map[string]int),
+			EntryPoints:     groupEps,
 		}
 
 		// Phase F3.3: Correct SubPath and FullPath computation
+		paramMap := make(map[string]bool)
 		for _, ep := range groupEps {
 			subPath := ep.Path
-			if basePath != "" && strings.HasPrefix(ep.Path, basePath) {
-				subPath = strings.TrimPrefix(ep.Path, basePath)
+			if meta.basePath != "" && strings.HasPrefix(ep.Path, meta.basePath) {
+				subPath = strings.TrimPrefix(ep.Path, meta.basePath)
 			}
 
+			full := joinPaths(meta.basePath, subPath)
 			method := model.RESTMethod{
 				HTTPMethod: ep.Method,
 				SubPath:    normalizePath(subPath),
-				FullPath:   joinPaths(basePath, subPath),
+				FullPath:   full,
 				Handler:    ep.Handler,
 				SourceFile: ep.SourceFile,
 			}
 			res.Methods = append(res.Methods, method)
 			res.HTTPMethods[ep.Method]++
+
+			// Extract path params
+			for _, p := range extractPathParams(full) {
+				paramMap[p] = true
+			}
+		}
+
+		for p := range paramMap {
+			res.PathParams = append(res.PathParams, p)
 		}
 
 		resources = append(resources, res)
@@ -240,20 +255,33 @@ func groupRESTResources(eps []model.EntryPoint) []model.RESTResource {
 	return resources
 }
 
-// extractClassPath performs a lightweight scan of a Java file to find the class-level @Path.
-// This is an AST-lite scan: it finds the first class or interface declaration
-// matching className and returns the closest preceding @Path annotation.
-// Method-level @Path annotations found after the class declaration are ignored.
-// Interfaces annotated with @Path are treated the same as classes.
-func extractClassPath(javaFilePath string, className string) string {
+type resourceMeta struct {
+	basePath string
+	auth     []string
+	consumes []string
+	produces []string
+}
+
+// scanResourceMetadata performs a lightweight scan of a Java file to find JAX-RS metadata.
+// This is an AST-lite scan: it collects annotations before the class declaration
+// and aggregates method-level annotations found throughout the file.
+func scanResourceMetadata(javaFilePath string, className string) resourceMeta {
 	f, err := os.Open(javaFilePath)
 	if err != nil {
-		return ""
+		return resourceMeta{}
 	}
 	defer f.Close()
 
 	scanner := bufio.NewScanner(f)
+	var meta resourceMeta
 	var latestPath string
+	var classFound bool
+
+	authMap := make(map[string]bool)
+	consumesMap := make(map[string]bool)
+	producesMap := make(map[string]bool)
+
+	authPrefixes := []string{"@RolesAllowed", "@PermitAll", "@DenyAll", "@Authenticated", "@RequiresRole", "@Secured"}
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -261,32 +289,84 @@ func extractClassPath(javaFilePath string, className string) string {
 			continue
 		}
 
-		// Detect @Path
+		// 1. Detect Path
 		if strings.HasPrefix(line, "@Path") {
-			start := strings.Index(line, "\"")
-			if start != -1 {
-				end := strings.LastIndex(line, "\"")
-				if end > start {
-					latestPath = line[start+1 : end]
-				}
+			lp := extractAnnotationString(line)
+			if !classFound {
+				latestPath = lp
 			}
-			continue
 		}
 
-		// Detect class declaration (AST-lite)
-		if (strings.Contains(line, "class ") || strings.Contains(line, "interface ")) && strings.Contains(line, className) {
+		// 2. Detect Auth
+		for _, pref := range authPrefixes {
+			if strings.HasPrefix(line, pref) {
+				authMap[strings.TrimPrefix(pref, "@")] = true
+			}
+		}
+
+		// 3. Detect Media Types
+		if strings.HasPrefix(line, "@Consumes") {
+			if mt := extractAnnotationString(line); mt != "" {
+				consumesMap[mt] = true
+			}
+		}
+		if strings.HasPrefix(line, "@Produces") {
+			if mt := extractAnnotationString(line); mt != "" {
+				producesMap[mt] = true
+			}
+		}
+
+		// 4. Detect class declaration
+		if !classFound && (strings.Contains(line, "class ") || strings.Contains(line, "interface ")) && strings.Contains(line, className) {
 			parts := strings.Fields(line)
 			for i, p := range parts {
 				if (p == "class" || p == "interface") && i+1 < len(parts) {
 					actualName := strings.Split(parts[i+1], "{")[0]
 					if actualName == className {
-						return normalizePath(latestPath)
+						meta.basePath = normalizePath(latestPath)
+						classFound = true
 					}
 				}
 			}
 		}
 	}
+
+	for k := range authMap {
+		meta.auth = append(meta.auth, k)
+	}
+	for k := range consumesMap {
+		meta.consumes = append(meta.consumes, k)
+	}
+	for k := range producesMap {
+		meta.produces = append(meta.produces, k)
+	}
+
+	return meta
+}
+
+func extractAnnotationString(line string) string {
+	start := strings.Index(line, "\"")
+	if start == -1 {
+		return ""
+	}
+	end := strings.LastIndex(line, "\"")
+	if end > start {
+		return line[start+1 : end]
+	}
 	return ""
+}
+
+var pathParamRegex = regexp.MustCompile(`\{([^}]+)\}`)
+
+func extractPathParams(path string) []string {
+	matches := pathParamRegex.FindAllStringSubmatch(path, -1)
+	var params []string
+	for _, m := range matches {
+		if len(m) > 1 {
+			params = append(params, m[1])
+		}
+	}
+	return params
 }
 
 // normalizePath ensures a path starts with /, uses correct slashes, and has no duplicates.

@@ -12,6 +12,12 @@ type RESTResource struct {
 
 	// Existing (backward compatibility)
 	EntryPoints []EntryPoint
+
+	// Phase F3.4 additions
+	AuthAnnotations []string
+	Consumes        []string
+	Produces        []string
+	PathParams      []string
 }
 
 // RESTMethod represents a single REST operation mapped to a handler method.

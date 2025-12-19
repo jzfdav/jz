@@ -62,10 +62,21 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 			for _, res := range svc.RESTResources {
 				sb.WriteString(fmt.Sprintf("#### %s\n", res.Name))
 				if res.BasePath != "" {
-					sb.WriteString(fmt.Sprintf("Base path: %s\n\n", res.BasePath))
-				} else {
-					sb.WriteString("\n")
+					sb.WriteString(fmt.Sprintf("Base path: %s\n", res.BasePath))
 				}
+				if len(res.AuthAnnotations) > 0 {
+					sb.WriteString(fmt.Sprintf("Auth: %s\n", strings.Join(res.AuthAnnotations, ", ")))
+				}
+				if len(res.Consumes) > 0 {
+					sb.WriteString(fmt.Sprintf("Consumes: %s\n", strings.Join(res.Consumes, ", ")))
+				}
+				if len(res.Produces) > 0 {
+					sb.WriteString(fmt.Sprintf("Produces: %s\n", strings.Join(res.Produces, ", ")))
+				}
+				if len(res.PathParams) > 0 {
+					sb.WriteString(fmt.Sprintf("Path Params: %s\n", strings.Join(res.PathParams, ", ")))
+				}
+				sb.WriteString("\n")
 
 				for _, m := range res.Methods {
 					sb.WriteString(fmt.Sprintf("- %-7s %s\n", m.HTTPMethod, m.FullPath))
