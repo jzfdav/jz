@@ -12,5 +12,6 @@ The AI MUST:
 8. Preserve existing behavior unless explicitly told otherwise
 9. Ask for clarification ONLY if the task is ambiguous
 10. Default to doing LESS rather than more
+11. Ensure all declared variables are used and the code builds cleanly in Go
 
 If unsure, stop and ask rather than guessing.
