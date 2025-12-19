@@ -205,8 +205,15 @@ func groupRESTResources(eps []model.EntryPoint) []model.RESTResource {
 		groups[ep.Resource] = append(groups[ep.Resource], ep)
 	}
 
+	var names []string
+	for name := range groups {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
 	var resources []model.RESTResource
-	for name, groupEps := range groups {
+	for _, name := range names {
+		groupEps := groups[name]
 		sourceFile := groupEps[0].SourceFile
 		meta := scanResourceMetadata(sourceFile, name)
 
@@ -313,12 +320,12 @@ func scanResourceMetadata(javaFilePath string, className string) resourceMeta {
 		// 3. Detect Media Types
 		if strings.HasPrefix(line, "@Consumes") {
 			if mt := extractAnnotationString(line); mt != "" {
-				consumesMap[mt] = true
+				consumesMap[strings.ToLower(mt)] = true
 			}
 		}
 		if strings.HasPrefix(line, "@Produces") {
 			if mt := extractAnnotationString(line); mt != "" {
-				producesMap[mt] = true
+				producesMap[strings.ToLower(mt)] = true
 			}
 		}
 
