@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -249,6 +250,7 @@ func groupRESTResources(eps []model.EntryPoint) []model.RESTResource {
 		for p := range paramMap {
 			res.PathParams = append(res.PathParams, p)
 		}
+		sort.Strings(res.PathParams)
 
 		resources = append(resources, res)
 	}
@@ -265,6 +267,10 @@ type resourceMeta struct {
 // scanResourceMetadata performs a lightweight scan of a Java file to find JAX-RS metadata.
 // This is an AST-lite scan: it collects annotations before the class declaration
 // and aggregates method-level annotations found throughout the file.
+//
+// Limitations:
+//   - Media-type parsing (@Consumes, @Produces) only supports literal string values.
+//     Array-based ({...}) or constant-based declarations are not supported.
 func scanResourceMetadata(javaFilePath string, className string) resourceMeta {
 	f, err := os.Open(javaFilePath)
 	if err != nil {
@@ -300,7 +306,7 @@ func scanResourceMetadata(javaFilePath string, className string) resourceMeta {
 		// 2. Detect Auth
 		for _, pref := range authPrefixes {
 			if strings.HasPrefix(line, pref) {
-				authMap[strings.TrimPrefix(pref, "@")] = true
+				authMap[pref] = true
 			}
 		}
 
@@ -334,12 +340,17 @@ func scanResourceMetadata(javaFilePath string, className string) resourceMeta {
 	for k := range authMap {
 		meta.auth = append(meta.auth, k)
 	}
+	sort.Strings(meta.auth)
+
 	for k := range consumesMap {
 		meta.consumes = append(meta.consumes, k)
 	}
+	sort.Strings(meta.consumes)
+
 	for k := range producesMap {
 		meta.produces = append(meta.produces, k)
 	}
+	sort.Strings(meta.produces)
 
 	return meta
 }

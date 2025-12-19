@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"jz/app"
 	"jz/model"
+	"sort"
 	"strings"
 )
 
@@ -84,8 +85,13 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 
 				if len(res.HTTPMethods) > 0 {
 					sb.WriteString("\nMethods summary:\n")
-					for m, count := range res.HTTPMethods {
-						sb.WriteString(fmt.Sprintf("- %s: %d\n", m, count))
+					var methods []string
+					for m := range res.HTTPMethods {
+						methods = append(methods, m)
+					}
+					sort.Strings(methods)
+					for _, m := range methods {
+						sb.WriteString(fmt.Sprintf("- %s: %d\n", m, res.HTTPMethods[m]))
 					}
 				}
 				sb.WriteString("\n")
