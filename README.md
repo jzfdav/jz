@@ -136,11 +136,16 @@ Both `report` commands support `--service` to filter by name and `--output` to s
 
 ---
 
-## 🔮 Phase F4 – Planned: Cross-Resource and Cross-Service Analysis
+## 🔮 Phase F4 — Cross-Resource and Cross-Service Analysis
 
-*Status: Not implemented yet.*
+*Status: IR extensions and initial detection logic implemented.*
 
-Upcoming goals include:
+Current capabilities include:
+- **Outbound REST Call Detection**: Best-effort AST-lite scanning for HTTP client literals and common method patterns.
+- **Internal Service Boundaries**: Automatic detection of structural boundaries (e.g., packages) within services.
+- **REST Call Linking**: Unambiguous calls within a service are linked to their target resources in the IR.
+
+Upcoming goals:
 - **Call graph inference**: Visualizing interactions between different REST resources.
 - **Internal Boundary Detection**: Identifying hidden service boundaries inside giant WAR files.
 - **Auth Propagation**: Tracking security context across service calls for risk visibility.

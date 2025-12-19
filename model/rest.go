@@ -18,6 +18,10 @@ type RESTResource struct {
 	Consumes        []string
 	Produces        []string
 	PathParams      []string
+
+	// Phase F4 additions
+	OutboundCalls []RESTCall // Calls originating from this resource
+	InboundCalls  []RESTCall // Calls targeting this resource (if known)
 }
 
 // RESTMethod represents a single REST operation mapped to a handler method.

@@ -140,6 +140,39 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph, Diagnostic) {
 		// Group REST Resources
 		svc.RESTResources = groupRESTResources(svc.EntryPoints)
 
+		// Phase F4: Detect Outbound Calls
+		for _, res := range svc.RESTResources {
+			for _, ep := range res.EntryPoints {
+				parts := strings.Split(ep.Handler, ".")
+				if len(parts) > 1 {
+					methodName := parts[1]
+					calls := scanOutboundCalls(ep.SourceFile, methodName, svc.Name, res.Name)
+					svc.RESTCalls = append(svc.RESTCalls, calls...)
+				}
+			}
+		}
+
+		// Phase F4: Boundary Detection (simplistic package-based)
+		pkgMap := make(map[string]bool)
+		for _, res := range svc.RESTResources {
+			parts := strings.Split(res.Name, ".")
+			if len(parts) > 1 {
+				pkg := strings.Join(parts[:len(parts)-1], ".")
+				pkgMap[pkg] = true
+			}
+		}
+		for pkg := range pkgMap {
+			svc.Boundaries = append(svc.Boundaries, model.ServiceBoundary{
+				ServiceName:  svc.Name,
+				BoundaryType: "package",
+				Identifier:   pkg,
+				Evidence:     "Resource found in this package",
+			})
+		}
+		sort.Slice(svc.Boundaries, func(i, j int) bool {
+			return svc.Boundaries[i].Identifier < svc.Boundaries[j].Identifier
+		})
+
 		services = append(services, svc)
 	}
 
@@ -189,11 +222,35 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph, Diagnostic) {
 				Application: libertyApp,
 			}
 			svc.RESTResources = groupRESTResources(svc.EntryPoints)
+
+			// Phase F4: Detect Outbound Calls
+			for _, res := range svc.RESTResources {
+				for _, ep := range res.EntryPoints {
+					parts := strings.Split(ep.Handler, ".")
+					if len(parts) > 1 {
+						methodName := parts[1]
+						calls := scanOutboundCalls(ep.SourceFile, methodName, svc.Name, res.Name)
+						svc.RESTCalls = append(svc.RESTCalls, calls...)
+					}
+				}
+			}
+
+			// Phase F4: Boundary Detection
+			svc.Boundaries = append(svc.Boundaries, model.ServiceBoundary{
+				ServiceName:  svc.Name,
+				BoundaryType: "resource-group",
+				Identifier:   "rest-api",
+				Evidence:     "Liberty WAR modeled as a single REST resource group",
+			})
+
 			services = append(services, svc)
 		}
 	}
 
-	// 5. Build System Graph
+	// 5. Link Calls and Deterministic Sorting
+	linkCallsToResources(services)
+
+	// 6. Build System Graph
 	sysGraph := graph.BuildSystemGraph(services)
 
 	return services, sysGraph, diag
@@ -415,4 +472,137 @@ func joinPaths(base, sub string) string {
 		return normalizePath(base)
 	}
 	return normalizePath(base + "/" + sub)
+}
+
+// scanOutboundCalls performs an AST-lite scan of a Java method to find outbound REST calls.
+func scanOutboundCalls(sourceFile, methodName, fromService, fromResource string) []model.RESTCall {
+	f, err := os.Open(sourceFile)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	var calls []model.RESTCall
+	var inMethod bool
+	var braceCount int
+
+	methodPatterns := []string{"get(", "post(", "put(", "delete(", "RESTClient", "WebTarget", "HttpURLConnection"}
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Detect start of method
+		if !inMethod && strings.Contains(line, methodName) && strings.Contains(line, "(") && (strings.Contains(line, "public") || strings.Contains(line, "private") || strings.Contains(line, "protected")) {
+			inMethod = true
+			braceCount = strings.Count(line, "{") - strings.Count(line, "}")
+			continue
+		}
+
+		if inMethod {
+			braceCount += strings.Count(line, "{") - strings.Count(line, "}")
+			if braceCount <= 0 && strings.Contains(line, "}") {
+				inMethod = false
+				continue
+			}
+
+			// Scan for call patterns
+			for _, p := range methodPatterns {
+				if strings.Contains(trimmed, p) {
+					call := model.RESTCall{
+						FromService:   fromService,
+						FromResource:  fromResource,
+						FromHandler:   methodName,
+						SourceFile:    sourceFile,
+						DetectionType: model.DetectionUnknown,
+						Confidence:    model.ConfidenceLow,
+					}
+
+					// Try to find HTTP method
+					upper := strings.ToUpper(trimmed)
+					for _, m := range []string{"GET", "POST", "PUT", "DELETE"} {
+						if strings.Contains(upper, m) {
+							call.HTTPMethod = m
+							break
+						}
+					}
+
+					// Try to find target path (very simplistic)
+					if strings.Contains(trimmed, "\"") {
+						start := strings.Index(trimmed, "\"")
+						end := strings.LastIndex(trimmed, "\"")
+						if end > start {
+							path := trimmed[start+1 : end]
+							if strings.HasPrefix(path, "/") || strings.HasPrefix(path, "http") {
+								call.TargetPath = path
+								call.DetectionType = model.DetectionLiteral
+								call.Confidence = model.ConfidenceHigh
+							}
+						}
+					}
+
+					if call.TargetPath == "" {
+						call.DetectionType = model.DetectionUnknown
+						call.Confidence = model.ConfidenceLow
+					}
+
+					calls = append(calls, call)
+					break // Only one call per line for now
+				}
+			}
+		}
+	}
+	return calls
+}
+
+// linkCallsToResources attempts to link detected calls to known resources in the same service.
+func linkCallsToResources(services []model.Service) {
+	for i := range services {
+		// Create a map of paths to resources for the current service
+		pathMap := make(map[string]string)
+		for _, res := range services[i].RESTResources {
+			for _, m := range res.Methods {
+				pathMap[m.FullPath] = res.Name
+			}
+		}
+
+		// Update calls and resource-level tracking
+		for j := range services[i].RESTCalls {
+			call := &services[i].RESTCalls[j]
+			// 2. Resolve target resource
+			if targetRes, ok := pathMap[call.TargetPath]; ok {
+				call.TargetService = services[i].Name
+				call.TargetResource = targetRes
+
+				// Populate InboundCalls on target resource
+				for k := range services[i].RESTResources {
+					if services[i].RESTResources[k].Name == targetRes {
+						services[i].RESTResources[k].InboundCalls = append(services[i].RESTResources[k].InboundCalls, *call)
+					}
+				}
+			}
+
+			// 3. Find origin resource and add to OutboundCalls
+			for k := range services[i].RESTResources {
+				if services[i].RESTResources[k].Name == call.FromResource {
+					services[i].RESTResources[k].OutboundCalls = append(services[i].RESTResources[k].OutboundCalls, *call)
+				}
+			}
+		}
+
+		// Sort calls for determinism
+		sort.Slice(services[i].RESTCalls, func(a, b int) bool {
+			return services[i].RESTCalls[a].FromHandler < services[i].RESTCalls[b].FromHandler
+		})
+
+		for k := range services[i].RESTResources {
+			sort.Slice(services[i].RESTResources[k].OutboundCalls, func(a, b int) bool {
+				return services[i].RESTResources[k].OutboundCalls[a].FromHandler < services[i].RESTResources[k].OutboundCalls[b].FromHandler
+			})
+			sort.Slice(services[i].RESTResources[k].InboundCalls, func(a, b int) bool {
+				return services[i].RESTResources[k].InboundCalls[a].FromHandler < services[i].RESTResources[k].InboundCalls[b].FromHandler
+			})
+		}
+	}
 }

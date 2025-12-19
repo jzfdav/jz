@@ -17,6 +17,10 @@ type Service struct {
 
 	// REST Resources (grouped entry points)
 	RESTResources []RESTResource
+
+	// Phase F4 additions
+	RESTCalls  []RESTCall
+	Boundaries []ServiceBoundary
 }
 
 // EntryPoint represents a REST entry point.
