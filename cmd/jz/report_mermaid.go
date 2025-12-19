@@ -21,13 +21,21 @@ var reportMermaidCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		rootDir := args[0]
-		services, sysGraph := app.Analyze(rootDir)
+		services, sysGraph, _ := app.Analyze(rootDir)
 
 		// Filter
 		services, sysGraph, err := filterData(services, sysGraph, mermaidService)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
+		}
+
+		if len(services) == 0 {
+			if err := writeOutput("%% No services detected. Nothing to visualize.\n", mermaidOutput); err != nil {
+				fmt.Fprintf(os.Stderr, "Error writing output: %v\n", err)
+				os.Exit(1)
+			}
+			return
 		}
 
 		var sb strings.Builder

@@ -2,12 +2,13 @@ package report
 
 import (
 	"fmt"
+	"jz/app"
 	"jz/model"
 	"strings"
 )
 
 // GenerateMarkdown creates a human-readable Markdown report from the analysis results.
-func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph) string {
+func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag app.Diagnostic) string {
 	var sb strings.Builder
 
 	// 1. System Overview
@@ -15,6 +16,24 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph) stri
 	sb.WriteString(fmt.Sprintf("- Total number of services: %d\n", len(services)))
 	sb.WriteString(fmt.Sprintf("- Total number of system-level dependencies: %d\n", len(sysGraph.Dependencies)))
 	sb.WriteString("\n")
+
+	// Diagnostics section
+	if !diag.HasOSGi {
+		sb.WriteString("## Diagnostics\n\n")
+		if diag.HasLiberty {
+			if !diag.AnyManifestFound {
+				sb.WriteString("- No MANIFEST.MF files found.\n")
+			}
+			sb.WriteString("- OSGi-based analysis skipped.\n")
+			sb.WriteString("- server.xml was detected.\n")
+			sb.WriteString("- Liberty-only service support is planned in a future release.\n")
+		} else {
+			sb.WriteString("- No supported runtime model detected.\n")
+			sb.WriteString("- Supported models: OSGi bundles (via META-INF/MANIFEST.MF).\n")
+			sb.WriteString("- Analysis skipped.\n")
+		}
+		sb.WriteString("\n")
+	}
 
 	// 2. Services
 	sb.WriteString("# Services\n\n")

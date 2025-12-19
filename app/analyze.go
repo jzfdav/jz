@@ -10,8 +10,17 @@ import (
 	"strings"
 )
 
+// Diagnostic holds information about what was detected during analysis.
+type Diagnostic struct {
+	HasOSGi          bool
+	HasLiberty       bool
+	AnyManifestFound bool
+}
+
 // Analyze performs static analysis on the given root directory.
-func Analyze(rootDir string) ([]model.Service, model.SystemGraph) {
+func Analyze(rootDir string) ([]model.Service, model.SystemGraph, Diagnostic) {
+	diag := Diagnostic{}
+
 	if _, err := os.Stat(rootDir); os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "Error: directory '%s' does not exist\n", rootDir)
 		os.Exit(1)
@@ -23,6 +32,21 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph) {
 		fmt.Fprintf(os.Stderr, "Error scanning OSGi bundles: %v\n", err)
 		os.Exit(1)
 	}
+	if len(bundles) > 0 {
+		diag.HasOSGi = true
+	}
+
+	// Check for any MANIFEST.MF (even if not a valid OSGi bundle)
+	filepath.Walk(rootDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if !info.IsDir() && strings.ToUpper(filepath.Base(path)) == "MANIFEST.MF" {
+			diag.AnyManifestFound = true
+			return filepath.SkipDir // Found at least one
+		}
+		return nil
+	})
 
 	// 2. Extract REST Entry Points (global)
 	entryPoints, err := scan.Scan(rootDir)
@@ -45,6 +69,7 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph) {
 			if err == nil {
 				libertyServer = srv
 				hasLiberty = true
+				diag.HasLiberty = true
 				return filepath.SkipDir // Stop after first server.xml found
 			}
 		}
@@ -107,5 +132,5 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph) {
 	// 5. Build System Graph
 	sysGraph := graph.BuildSystemGraph(services)
 
-	return services, sysGraph
+	return services, sysGraph, diag
 }

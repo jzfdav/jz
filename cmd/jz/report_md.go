@@ -20,7 +20,7 @@ var reportMarkdownCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		rootDir := args[0]
-		services, sysGraph := app.Analyze(rootDir)
+		services, sysGraph, diag := app.Analyze(rootDir)
 
 		// Filter
 		services, sysGraph, err := filterData(services, sysGraph, mdService)
@@ -30,7 +30,7 @@ var reportMarkdownCmd = &cobra.Command{
 		}
 
 		// Generate
-		content := report.GenerateMarkdown(services, sysGraph)
+		content := report.GenerateMarkdown(services, sysGraph, diag)
 
 		// Output
 		if err := writeOutput(content, mdOutput); err != nil {
