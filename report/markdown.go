@@ -100,11 +100,15 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 					sb.WriteString("\n#### Inbound Calls\n\n")
 					calls := res.InboundCalls
 					sortRESTCalls(calls)
-					for _, call := range calls {
+					for i, call := range calls {
+						if i > 0 {
+							sb.WriteString("\n")
+						}
 						target := fmt.Sprintf("%s/%s", svc.Name, res.Name)
 						sb.WriteString(fmt.Sprintf("- FROM %s/%s.%s\n", call.FromService, call.FromResource, call.FromHandler))
-						sb.WriteString(fmt.Sprintf("  TO %s (%s)\n", target, call.ResolutionScope))
+						sb.WriteString(fmt.Sprintf("  TO %s\n", target))
 						sb.WriteString(fmt.Sprintf("  %s %s\n", call.HTTPMethod, call.TargetPath))
+						sb.WriteString(fmt.Sprintf("  Resolution: %s\n", call.ResolutionScope))
 						sb.WriteString(fmt.Sprintf("  Confidence: %s | Detection: %s\n", call.Confidence, call.DetectionType))
 						if call.ResolutionEvidence != "" {
 							sb.WriteString(fmt.Sprintf("  Evidence: %s\n", call.ResolutionEvidence))
@@ -118,18 +122,18 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 					sb.WriteString("\n#### Outbound Calls\n\n")
 					calls := res.OutboundCalls
 					sortRESTCalls(calls)
-					for _, call := range calls {
+					for i, call := range calls {
+						if i > 0 {
+							sb.WriteString("\n")
+						}
 						target := "UNRESOLVED"
 						if call.TargetService != "" {
 							target = fmt.Sprintf("%s/%s", call.TargetService, call.TargetResource)
 						}
 						sb.WriteString(fmt.Sprintf("- FROM %s/%s.%s\n", call.FromService, call.FromResource, call.FromHandler))
-						if call.ResolutionScope != model.ResolutionUnresolved {
-							sb.WriteString(fmt.Sprintf("  TO %s (%s)\n", target, call.ResolutionScope))
-						} else {
-							sb.WriteString(fmt.Sprintf("  TO %s\n", target))
-						}
+						sb.WriteString(fmt.Sprintf("  TO %s\n", target))
 						sb.WriteString(fmt.Sprintf("  %s %s\n", call.HTTPMethod, call.TargetPath))
+						sb.WriteString(fmt.Sprintf("  Resolution: %s\n", call.ResolutionScope))
 						sb.WriteString(fmt.Sprintf("  Confidence: %s | Detection: %s\n", call.Confidence, call.DetectionType))
 						if call.ResolutionEvidence != "" {
 							sb.WriteString(fmt.Sprintf("  Evidence: %s\n", call.ResolutionEvidence))
@@ -180,19 +184,24 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 			sb.WriteString(fmt.Sprintf("- Unresolved: %d\n", scopeCounts[model.ResolutionUnresolved]))
 			sb.WriteString(fmt.Sprintf("- Distinct target paths: %d\n", len(paths)))
 
-			sb.WriteString("- Confidence breakdown:\n")
+			sb.WriteString("\nBreakdown:\n")
+			sb.WriteString("- Resolution scope:\n")
+			for _, s := range []string{model.ResolutionSameService, model.ResolutionCrossService, model.ResolutionUnresolved} {
+				sb.WriteString(fmt.Sprintf("  - %s: %d\n", s, scopeCounts[s]))
+			}
+
+			sb.WriteString("- Confidence:\n")
 			for _, c := range []string{model.ConfidenceHigh, model.ConfidenceMedium, model.ConfidenceLow} {
 				sb.WriteString(fmt.Sprintf("  - %s: %d\n", c, confCounts[c]))
 			}
 
-			sb.WriteString("- Detection breakdown:\n")
+			sb.WriteString("- Detection type:\n")
 			for _, d := range []string{model.DetectionLiteral, model.DetectionConstant, model.DetectionUnknown} {
 				sb.WriteString(fmt.Sprintf("  - %s: %d\n", d, detCounts[d]))
 			}
 
 			sb.WriteString("\n#### Resolution Note (Phase F5)\n")
 			sb.WriteString("Cross-service resolution attempts to link high/medium confidence calls by exact path and method match across all detected services. Resolution is only recorded if a **unique** global match is found. Unresolved calls may be due to dynamic URL parameters, constants not evaluated by AST-lite, or cross-service boundaries that are not currently analyzed.\n")
-			sb.WriteString("\n")
 		}
 
 		sb.WriteString("\n")

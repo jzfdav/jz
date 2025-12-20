@@ -141,7 +141,7 @@ func GenerateCallMermaid(services []model.Service) string {
 					hasUnknown = true
 				}
 
-				sb.WriteString(fmt.Sprintf("\t%s %s|%s [%s, %s]| %s\n", fromID, arrow, call.HTTPMethod, call.Confidence, scopeLabel, toID))
+				sb.WriteString(fmt.Sprintf("\t%s %s|%s [%s, %s]| %s\n", fromID, arrow, call.HTTPMethod, scopeLabel, call.Confidence, toID))
 			}
 		}
 	}
@@ -152,10 +152,10 @@ func GenerateCallMermaid(services []model.Service) string {
 
 	if hasCalls {
 		sb.WriteString("\n\t%% Legend:\n")
-		sb.WriteString("\t%% Solid arrow (-->)     = Same-service resolution\n")
-		sb.WriteString("\t%% Thick arrow (==>)     = Cross-service resolution\n")
-		sb.WriteString("\t%% Dashed arrow (-.->)    = Unresolved\n")
-		sb.WriteString("\t%% Labels: Method [Confidence, Scope]\n")
+		sb.WriteString("\t%% Solid arrow (-->)   = same-service resolution\n")
+		sb.WriteString("\t%% Thick arrow (==>)   = cross-service resolution\n")
+		sb.WriteString("\t%% Dashed arrow (-.->)  = unresolved\n")
+		sb.WriteString("\t%% Label: METHOD [scope, confidence]\n")
 	}
 
 	return sb.String()
