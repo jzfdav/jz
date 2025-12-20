@@ -115,33 +115,33 @@ func GenerateCallMermaid(services []model.Service) string {
 			fromID := sanitize(svc.Name + "_" + res.Name)
 			for _, call := range res.OutboundCalls {
 				// Intentional filtering: only show calls with high/medium confidence.
-				// Low-confidence calls (e.g. partial AST matches or unresolved variables)
-				// are omitted to prevent misleading "noise" in the visualization.
 				if call.Confidence == model.ConfidenceLow || call.HTTPMethod == "" {
 					continue
 				}
 
 				hasCalls = true
 				toID := "UNKNOWN"
-				// Style arrow based on confidence
-				// High: solid (-->), Medium: dashed (-.->)
-				arrow := "-->"
-				if call.Confidence == model.ConfidenceMedium {
-					arrow = "-.->"
-				}
+				arrow := "-.->" // Default for unresolved
 
-				if call.TargetService != "" && call.TargetResource != "" {
+				scopeLabel := ""
+				switch call.ResolutionScope {
+				case model.ResolutionSameService:
+					arrow = "-->"
+					scopeLabel = "same"
 					toID = sanitize(call.TargetService + "_" + call.TargetResource)
-				} else {
-					// Unresolved calls use dashed arrow even if high confidence (best effort)
-					arrow = "-.->"
+				case model.ResolutionCrossService:
+					arrow = "==>" // Thick arrow for cross-service
+					scopeLabel = "cross"
+					toID = sanitize(call.TargetService + "_" + call.TargetResource)
+				default:
+					scopeLabel = "unresolved"
 				}
 
 				if toID == "UNKNOWN" {
 					hasUnknown = true
 				}
 
-				sb.WriteString(fmt.Sprintf("\t%s %s|%s [%s]| %s\n", fromID, arrow, call.HTTPMethod, call.Confidence, toID))
+				sb.WriteString(fmt.Sprintf("\t%s %s|%s [%s, %s]| %s\n", fromID, arrow, call.HTTPMethod, call.Confidence, scopeLabel, toID))
 			}
 		}
 	}
@@ -152,9 +152,10 @@ func GenerateCallMermaid(services []model.Service) string {
 
 	if hasCalls {
 		sb.WriteString("\n\t%% Legend:\n")
-		sb.WriteString("\t%% Solid edge (-->)   = High confidence\n")
-		sb.WriteString("\t%% Dashed edge (-.->)  = Medium confidence or Unresolved\n")
-		sb.WriteString("\t%% Labels include HTTP method and [confidence]\n")
+		sb.WriteString("\t%% Solid arrow (-->)     = Same-service resolution\n")
+		sb.WriteString("\t%% Thick arrow (==>)     = Cross-service resolution\n")
+		sb.WriteString("\t%% Dashed arrow (-.->)    = Unresolved\n")
+		sb.WriteString("\t%% Labels: Method [Confidence, Scope]\n")
 	}
 
 	return sb.String()

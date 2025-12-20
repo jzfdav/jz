@@ -101,10 +101,14 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 					calls := res.InboundCalls
 					sortRESTCalls(calls)
 					for _, call := range calls {
+						target := fmt.Sprintf("%s/%s", svc.Name, res.Name)
 						sb.WriteString(fmt.Sprintf("- FROM %s/%s.%s\n", call.FromService, call.FromResource, call.FromHandler))
-						sb.WriteString(fmt.Sprintf("  TO %s/%s\n", svc.Name, res.Name))
+						sb.WriteString(fmt.Sprintf("  TO %s (%s)\n", target, call.ResolutionScope))
 						sb.WriteString(fmt.Sprintf("  %s %s\n", call.HTTPMethod, call.TargetPath))
 						sb.WriteString(fmt.Sprintf("  Confidence: %s | Detection: %s\n", call.Confidence, call.DetectionType))
+						if call.ResolutionEvidence != "" {
+							sb.WriteString(fmt.Sprintf("  Evidence: %s\n", call.ResolutionEvidence))
+						}
 						sb.WriteString(fmt.Sprintf("  File: %s\n", call.SourceFile))
 					}
 				}
@@ -120,9 +124,16 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 							target = fmt.Sprintf("%s/%s", call.TargetService, call.TargetResource)
 						}
 						sb.WriteString(fmt.Sprintf("- FROM %s/%s.%s\n", call.FromService, call.FromResource, call.FromHandler))
-						sb.WriteString(fmt.Sprintf("  TO %s\n", target))
+						if call.ResolutionScope != model.ResolutionUnresolved {
+							sb.WriteString(fmt.Sprintf("  TO %s (%s)\n", target, call.ResolutionScope))
+						} else {
+							sb.WriteString(fmt.Sprintf("  TO %s\n", target))
+						}
 						sb.WriteString(fmt.Sprintf("  %s %s\n", call.HTTPMethod, call.TargetPath))
 						sb.WriteString(fmt.Sprintf("  Confidence: %s | Detection: %s\n", call.Confidence, call.DetectionType))
+						if call.ResolutionEvidence != "" {
+							sb.WriteString(fmt.Sprintf("  Evidence: %s\n", call.ResolutionEvidence))
+						}
 						sb.WriteString(fmt.Sprintf("  File: %s\n", call.SourceFile))
 					}
 				}
@@ -151,23 +162,22 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 		// Phase F4: REST Call Summary
 		if len(svc.RESTCalls) > 0 {
 			sb.WriteString("### REST Call Summary\n\n")
-			resolved := 0
 			confCounts := make(map[string]int)
 			detCounts := make(map[string]int)
+			scopeCounts := make(map[string]int)
 			paths := make(map[string]bool)
 
 			for _, call := range svc.RESTCalls {
-				if call.TargetService != "" {
-					resolved++
-				}
 				confCounts[call.Confidence]++
 				detCounts[call.DetectionType]++
+				scopeCounts[call.ResolutionScope]++
 				paths[call.TargetPath] = true
 			}
 
 			sb.WriteString(fmt.Sprintf("- Total outbound calls: %d\n", len(svc.RESTCalls)))
-			sb.WriteString(fmt.Sprintf("- Resolved within service: %d\n", resolved))
-			sb.WriteString(fmt.Sprintf("- Unresolved calls: %d\n", len(svc.RESTCalls)-resolved))
+			sb.WriteString(fmt.Sprintf("- Same-service resolved: %d\n", scopeCounts[model.ResolutionSameService]))
+			sb.WriteString(fmt.Sprintf("- Cross-service resolved: %d\n", scopeCounts[model.ResolutionCrossService]))
+			sb.WriteString(fmt.Sprintf("- Unresolved: %d\n", scopeCounts[model.ResolutionUnresolved]))
 			sb.WriteString(fmt.Sprintf("- Distinct target paths: %d\n", len(paths)))
 
 			sb.WriteString("- Confidence breakdown:\n")
@@ -180,9 +190,8 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 				sb.WriteString(fmt.Sprintf("  - %s: %d\n", d, detCounts[d]))
 			}
 
-			if resolved < len(svc.RESTCalls) {
-				sb.WriteString("\n*Note: This tool performs AST-lite static analysis. Calls may remain unresolved due to dynamic URL construction, variables, or cross-service boundaries not yet modeled.*\n")
-			}
+			sb.WriteString("\n#### Resolution Note (Phase F5)\n")
+			sb.WriteString("Cross-service resolution attempts to link high/medium confidence calls by exact path and method match across all detected services. Resolution is only recorded if a **unique** global match is found. Unresolved calls may be due to dynamic URL parameters, constants not evaluated by AST-lite, or cross-service boundaries that are not currently analyzed.\n")
 			sb.WriteString("\n")
 		}
 

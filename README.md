@@ -93,17 +93,17 @@ graph TD
     my_app[my-app (WAR)]
 ```
 
-### Component Graph
-For OSGi services, `jz` visualizes internal Declarative Service (DS) wiring.
+### Resource Interaction Graph
+Use `jz report mermaid . --calls` to visualize how REST resources interact across the system. This shows both same-service and cross-service calls.
 
 ---
 
 ## 🛑 What jz Does NOT do (yet)
 
-- **No inter-resource call graphs**: Cannot yet show how one REST resource calls another.
 - **No auth propagation**: Does not track if a user’s role is checked across service boundaries.
 - **No schema modeling**: Does not parse POJOs for request/response bodies.
 - **No dependency inference**: Does not guess service dependencies based on imports or library usage.
+- **No speculative matching**: Only links calls if exact method and path matches are found.
 
 ---
 
@@ -129,29 +129,32 @@ go build -o bin/jz ./cmd/jz
 ```bash
 jz scan .                          # Quick Markdown summary
 jz report markdown .               # Full Markdown report
-jz report mermaid .                # Generate Mermaid diagrams
+jz report mermaid .                # Generate system/component diagrams
+jz report mermaid . --calls        # Generate REST interaction graph
 ```
 
 Both `report` commands support `--service` to filter by name and `--output` to save to a file.
 
 ---
 
-## 🔮 Phase F4 — Cross-Resource and Cross-Service Analysis
+## 🔮 Roadmap
 
-*Status: IR extensions and initial detection logic implemented.*
+### Phase F4 — Structural Analysis (Implemented)
+- **Outbound REST Call Detection**: Best-effort AST-lite scanning for HTTP client literals.
+- **Internal Service Boundaries**: Detection of structural boundaries (e.g., packages).
+- **REST Interaction Visibility**: Detailed reporting and visualization of resource-level calls.
 
-Current capabilities include:
-- **Outbound REST Call Detection**: Best-effort AST-lite scanning for HTTP client literals and common method patterns.
-- **Internal Service Boundaries**: Automatic detection of structural boundaries (e.g., packages) within services.
-- **REST Call Linking**: Unambiguous calls within a service are linked to their target resources in the IR.
+### Phase F5 — Cross-Service Call Resolution (Implemented)
+- **Automatic Linking**: Unambiguous calls are linked across services by exact path and method match.
+- **Confidence Layer**: Visual encoding of detection confidence (solid vs. dashed arrows).
+- **Evidence Surfacing**: Detailed reporting on why and how a link was established.
 
-Upcoming goals:
-- **Call graph inference**: Visualizing interactions between different REST resources.
-- **Internal Boundary Detection**: Identifying hidden service boundaries inside giant WAR files.
+### Upcoming
 - **Auth Propagation**: Tracking security context across service calls for risk visibility.
 - **Multi-service Liberty support**: Better modeling of EAR files and sidecar deployments.
+- **Advanced AST-lite heuristics**: Safe evaluation of simple string constants for paths.
 
-Analysis will remain incremental and opt-in, preserving the tool's performance and safety.
+Analysis remains conservative and deterministic, preferring false negatives over false positives.
 
 ---
 

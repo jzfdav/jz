@@ -583,34 +583,89 @@ func scanOutboundCalls(sourceFile, methodName, fromService, fromResource string)
 	return calls
 }
 
-// linkCallsToResources attempts to link detected calls to known resources in the same service.
+type targetResource struct {
+	serviceName  string
+	resourceName string
+}
+
+// linkCallsToResources attempts to link detected calls to known resources.
+// It prioritizes same-service links, then attempts cross-service resolution
+// if a unique match exists globally (AST-lite conservative matching).
 func linkCallsToResources(services []model.Service) {
+	// 1. Build a global registry of all REST entry points: (Method, Path) -> []targetResource
+	registry := make(map[string][]targetResource)
+	for _, svc := range services {
+		for _, res := range svc.RESTResources {
+			for _, m := range res.Methods {
+				key := fmt.Sprintf("%s|%s", m.HTTPMethod, m.FullPath)
+				registry[key] = append(registry[key], targetResource{
+					serviceName:  svc.Name,
+					resourceName: res.Name,
+				})
+			}
+		}
+	}
+
 	for i := range services {
-		// Create a map of paths to resources for the current service
-		pathMap := make(map[string]string)
+		// 2. Build map of paths for the same service for fast priority lookup
+		sameServiceMap := make(map[string][]string) // path -> []resourceName
 		for _, res := range services[i].RESTResources {
 			for _, m := range res.Methods {
-				pathMap[m.FullPath] = res.Name
+				key := fmt.Sprintf("%s|%s", m.HTTPMethod, m.FullPath)
+				sameServiceMap[key] = append(sameServiceMap[key], res.Name)
 			}
 		}
 
-		// Update calls and resource-level tracking
 		for j := range services[i].RESTCalls {
 			call := &services[i].RESTCalls[j]
-			// 2. Resolve target resource
-			if targetRes, ok := pathMap[call.TargetPath]; ok {
-				call.TargetService = services[i].Name
-				call.TargetResource = targetRes
+			call.ResolutionScope = model.ResolutionUnresolved
 
-				// Populate InboundCalls on target resource
-				for k := range services[i].RESTResources {
-					if services[i].RESTResources[k].Name == targetRes {
-						services[i].RESTResources[k].InboundCalls = append(services[i].RESTResources[k].InboundCalls, *call)
+			// Key for lookup (Method + Path)
+			regKey := fmt.Sprintf("%s|%s", call.HTTPMethod, call.TargetPath)
+
+			// 2a. Attempt same-service resolution (Priority 1)
+			if targets, ok := sameServiceMap[regKey]; ok {
+				// Special Case: If same-service has multiple matches for the same path/method,
+				// we still link if the resolution is unambiguous within the service.
+				// However, Phase F5 usually assumes unique paths.
+				if len(targets) == 1 {
+					call.TargetService = services[i].Name
+					call.TargetResource = targets[0]
+					call.ResolutionScope = model.ResolutionSameService
+					call.ResolutionEvidence = "exact path+method match (internal)"
+				}
+			}
+
+			// 2b. Attempt cross-service resolution (Priority 2)
+			// Only if unresolved, and confidence is High/Medium
+			if call.ResolutionScope == model.ResolutionUnresolved &&
+				(call.Confidence == model.ConfidenceHigh || call.Confidence == model.ConfidenceMedium) {
+
+				if globalTargets, ok := registry[regKey]; ok {
+					if len(globalTargets) == 1 {
+						// Unique global match found
+						call.TargetService = globalTargets[0].serviceName
+						call.TargetResource = globalTargets[0].resourceName
+						call.ResolutionScope = model.ResolutionCrossService
+						call.ResolutionEvidence = "exact path+method match (global)"
 					}
 				}
 			}
 
-			// 3. Find origin resource and add to OutboundCalls
+			// 3. Populate InboundCalls on the TargetResource (wherever it is)
+			if call.TargetService != "" && call.TargetResource != "" {
+				for sIdx := range services {
+					if services[sIdx].Name == call.TargetService {
+						for rIdx := range services[sIdx].RESTResources {
+							if services[sIdx].RESTResources[rIdx].Name == call.TargetResource {
+								services[sIdx].RESTResources[rIdx].InboundCalls = append(services[sIdx].RESTResources[rIdx].InboundCalls, *call)
+							}
+						}
+					}
+				}
+			}
+
+			// 4. Populate OutboundCalls on the Originating Resource
 			for k := range services[i].RESTResources {
 				if services[i].RESTResources[k].Name == call.FromResource {
 					services[i].RESTResources[k].OutboundCalls = append(services[i].RESTResources[k].OutboundCalls, *call)
@@ -620,15 +675,24 @@ func linkCallsToResources(services []model.Service) {
 
 		// Sort calls for determinism
 		sort.Slice(services[i].RESTCalls, func(a, b int) bool {
-			return services[i].RESTCalls[a].FromHandler < services[i].RESTCalls[b].FromHandler
+			if services[i].RESTCalls[a].FromHandler != services[i].RESTCalls[b].FromHandler {
+				return services[i].RESTCalls[a].FromHandler < services[i].RESTCalls[b].FromHandler
+			}
+			return services[i].RESTCalls[a].TargetPath < services[i].RESTCalls[b].TargetPath
 		})
 
 		for k := range services[i].RESTResources {
 			sort.Slice(services[i].RESTResources[k].OutboundCalls, func(a, b int) bool {
-				return services[i].RESTResources[k].OutboundCalls[a].FromHandler < services[i].RESTResources[k].OutboundCalls[b].FromHandler
+				if services[i].RESTResources[k].OutboundCalls[a].FromHandler != services[i].RESTResources[k].OutboundCalls[b].FromHandler {
+					return services[i].RESTResources[k].OutboundCalls[a].FromHandler < services[i].RESTResources[k].OutboundCalls[b].FromHandler
+				}
+				return services[i].RESTResources[k].OutboundCalls[a].TargetPath < services[i].RESTResources[k].OutboundCalls[b].TargetPath
 			})
 			sort.Slice(services[i].RESTResources[k].InboundCalls, func(a, b int) bool {
-				return services[i].RESTResources[k].InboundCalls[a].FromHandler < services[i].RESTResources[k].InboundCalls[b].FromHandler
+				if services[i].RESTResources[k].InboundCalls[a].FromHandler != services[i].RESTResources[k].InboundCalls[b].FromHandler {
+					return services[i].RESTResources[k].InboundCalls[a].FromHandler < services[i].RESTResources[k].InboundCalls[b].FromHandler
+				}
+				return services[i].RESTResources[k].InboundCalls[a].TargetPath < services[i].RESTResources[k].InboundCalls[b].TargetPath
 			})
 		}
 	}
