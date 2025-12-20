@@ -102,7 +102,7 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 					sortRESTCalls(calls)
 					for _, call := range calls {
 						sb.WriteString(fmt.Sprintf("- FROM %s/%s.%s\n", call.FromService, call.FromResource, call.FromHandler))
-						sb.WriteString(fmt.Sprintf("  TO %s\n", res.Name))
+						sb.WriteString(fmt.Sprintf("  TO %s/%s\n", svc.Name, res.Name))
 						sb.WriteString(fmt.Sprintf("  %s %s\n", call.HTTPMethod, call.TargetPath))
 						sb.WriteString(fmt.Sprintf("  Confidence: %s | Detection: %s\n", call.Confidence, call.DetectionType))
 						sb.WriteString(fmt.Sprintf("  File: %s\n", call.SourceFile))
