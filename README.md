@@ -1,163 +1,143 @@
-# jz — Understand Large Java Backends Without Running Them
+# jz — Static Analysis for Large Java Backends
 
-> ⚠️ **Note**: This project is **vibe coded**. It was rapidly prototyped with AI assistance. While it works, standard engineering rigor may vary.
+`jz` is a static analysis tool designed to help engineers understand large, legacy, multi-service Java systems—specifically those built with OSGi, JAX-RS, and deployed on WebSphere Liberty. It extracts architecture, dependencies, and execution flows directly from source code without requiring a running environment.
 
+> All identifiers, examples, and diagrams in this project are fictional and provided solely for demonstration purposes.
 
-`jz` is a **static analysis CLI tool** designed to help engineers understand **large, legacy, multi-service Java systems**—especially those built with **OSGi**, **JAX-RS**, **Ant/Maven**, and deployed on **WebSphere Liberty**.
+📘 New here? Start with [Quick Start](docs/quickstart.md)
 
-It extracts architecture, dependencies, and workflows **without executing the system**, making it safe, fast, and suitable for unfamiliar or production-critical codebases.
+## Documentation Overview
+
+- **README.md**: High-level overview, design philosophy, and worked examples.
+- **docs/quickstart.md**: Getting started guide for narrative onboarding.
+- **docs/usage.md**: Technical reference for all CLI commands and flags.
+- **docs/quickstart-mermaid.md**: Visual, diagram-first introduction to `jz`.
 
 ---
 
-## 🚀 Quick Start (Liberty WAR example)
+## What jz Is
+- **Static analysis tool**: Uses AST-lite techniques to parse source files.
+- **REST-focused**: Specialized in JAX-RS entry points and their downstream interactions.
+- **Execution flow engine**: Extracts step-by-step logic from handlers.
+- **Deterministic & Conservative**: Only reports facts it can prove lexically; prioritizes safety and accuracy over guesses.
 
-If you are working on a repository that follows the WebSphere Liberty WAR model (non-OSGi), `jz` treats the entire repository as a single service and groups endpoints by resource class.
+## What jz Is NOT
+- **No runtime tracing**: Does not monitor or execute live code.
+- **No data-flow resolution**: Does not track variable values or state propagation.
+- **No auth or role inference**: Does not interpret security logic or permissions.
+- **No speculative linking**: Only connects services if an unambiguous match is found.
+- **No business-logic interpretation**: Does not "understand" what the code is trying to achieve (e.g., "complex validation logic").
+
+---
+
+## Core Concepts
+
+- **Service**: A deployable unit, such as an OSGi bundle or a Liberty Web application (WAR).
+- **REST Resource**: A Java class containing JAX-RS annotations representing a set of API endpoints.
+- **Entry Point**: A specific HTTP method and path mapped to a single handler method.
+- **Execution Flow**: A captured sequence of steps (guards, calls, returns) inside a handler.
+- **Resolution Scope**: 
+  - `same-service`: A call linked to a resource within the same deployment unit.
+  - `cross-service`: A call linked to a resource in a different service.
+  - `unresolved`: A call that could not be proved to target a known resource.
+- **Confidence Levels**:
+  - `high`: Exact literal matches (e.g., hardcoded URL strings).
+  - `medium`: Likely matches with some abstraction.
+  - `low`: Inferred or complex patterns that cannot be fully verified.
+- **AST-lite Analysis**: A high-performance, line-based scanning technique that extracts structure without the overhead or fragility of a full Java compiler frontend.
+
+---
+
+## Command Overview
+
+| Command | Purpose | Output |
+| :--- | :--- | :--- |
+| `jz scan <path>` | Quick system summary and diagnostics | Markdown |
+| `jz report markdown <path>` | Full static analysis including all services and resources | Markdown |
+| `jz report mermaid <path> --calls` | Global REST resource interaction graph | Mermaid |
+| `jz flow extract <path>` | Detailed step-by-step execution flow for one resource | Markdown / Mermaid |
+| `jz flow diff <pathA> <pathB>` | Structural difference between two versions of a flow | Markdown |
+
+---
+
+## Worked Examples
+
+### Example 1: Targeted Flow Extraction
+Extract the execution narrative for a specific API resource:
 
 ```bash
-# Scan and view a summary
-jz scan .
+jz flow extract . --resource ExampleApiV1
 ```
 
-### Example Output
-```markdown
-# System Overview
-- Total number of services: 1
-- Total number of system-level dependencies: 0
+- **Analyzed Scope**: Only the `ExampleApiV1` class and its immediate interactions are scanned.
+- **Logic Capture**: `jz` identifies `ENTRY`, `GUARD`, `OUTBOUND`, and `RETURN` steps.
+- **Safety**: Dynamic behaviors and variable-based routing are intentionally ignored to ensure the output is deterministic.
 
-## Diagnostics
-- Liberty WAR service detected.
-- OSGi bundles not found; modeled as a single Liberty service.
+### Example 2: Mermaid Flow Visualization
+Generate a visual diagram of the flow with guard chain compaction:
 
-# Services
-## my-web-app
-- Root Path: /Users/dev/repo
-- REST Entry Points: 16
-- Liberty Server: defaultServer
-
-### REST Resources
-#### TenantApiV1
-Base path: /api/v1/tenants
-Auth: @RolesAllowed
-Consumes: application/json
-Produces: application/json
-Path Params: tenantId
-
-- GET     /api/v1/tenants
-- POST    /api/v1/tenants
-- GET     /api/v1/tenants/{tenantId}
-
-Methods summary:
-- GET: 12
-- POST: 4
+```bash
+jz flow extract . --resource ExampleApiV1 --format mermaid --compact
 ```
 
----
+- **Guard Compaction**: Sequential guard conditions are collapsed into a single decision node for readability.
+- **Arrow Semantics**: `-->` denotes same-service calls, `==>` denotes cross-service, and `-.->` denotes conditional or unresolved paths.
+- **Termination**: Explicit nodes signal `End (Return)` vs `End (Unexpanded)` (where analysis reached a scope limit).
 
-## 🔍 Runtime Detection Logic
+### Example 3: Flow Diff Between Versions
+Compare how a flow changed after a refactor or feature addition:
 
-`jz` uses the following flags to determine how to model your codebase:
-
-- **HasOSGi**: Set if `META-INF/MANIFEST.MF` files are found with OSGi headers. `jz` will model each bundle as a separate service.
-- **HasLiberty**: Set if a `server.xml` is detected anywhere in the tree.
-- **HasLibertyWAR**: Set when **no OSGi bundles** are found, but a Liberty configuration exists with a `webApplication` entry or a `WEB-INF/web.xml` file.
-
-**For Liberty WAR repos:**
-- The repository is modeled as **one logical service**.
-- REST resources are grouped by their implementation class.
-- System-level dependencies are usually empty (unless multiple services are detected).
-
----
-
-## 🧠 AST-lite Scanning
-
-`jz` avoids the overhead of a full Java parser or the fragility of raw regex by using a line-based "AST-lite" approach:
-
-- **Line-by-line scanning**: Reads Java files to find JAX-RS annotations and class declarations.
-- **No constant resolution**: Does not resolve constants (e.g., `@Path(Constants.BASE)` is not resolved).
-- **No array-based detection**: `@Consumes({"a", "b"})` is not currently parsed.
-- **No inheritance**: Class-level metadata is extracted from the immediate source file only.
-- **Deterministic**: Results are stable and never inferred or guessed.
-- **Safe**: Does not load your classes or execute bytecode.
-
----
-
-## 📊 Visualizations
-
-Generated via `jz report mermaid .`.
-
-### System Graph
-For Liberty WAR services, these appear as a single node labeled with `(WAR)`.
-
-```mermaid
-graph TD
-    my_app[my-app (WAR)]
+```bash
+jz flow diff ./v1 ./v2 --resource ExampleApiV1
 ```
 
-### Resource Interaction Graph
-Use `jz report mermaid . --calls` to visualize how REST resources interact across the system. This shows both same-service and cross-service calls.
+- **Output**: Clearly marks `ADDED`, `REMOVED`, or `MODIFIED` steps.
+- **Strict Matching**: Diffs are performed step-by-step; reordering is reported as a structural change rather than a match.
+- **Fact-Based**: The report surfaces structural changes only, leaving business interpretation to the reviewer.
 
 ---
 
-## 🛑 What jz Does NOT do (yet)
+## How to Read jz Output
 
-- **No auth propagation**: Does not track if a user’s role is checked across service boundaries.
-- **No schema modeling**: Does not parse POJOs for request/response bodies.
-- **No dependency inference**: Does not guess service dependencies based on imports or library usage.
-- **No speculative matching**: Only links calls if exact method and path matches are found.
+- **Guard Chains vs. Core Path**: Guards are typically early conditional checks. `jz` displays them as gating the subsequent logic.
+- **Early Returns vs. Normal Termination**: An early exit is a return statement occurring before the end of the method, often as a result of a guard check.
+- **Unresolved Outbound Calls**: These are calls `jz` detected but could not uniquely link to a resource. This is normal for dynamic URLs or third-party APIs.
+- **Confidence vs. Resolution Scope**: Confidence describes the *certainty* of the call detection; Scope describes *where* the call goes if it was resolved.
+- **Unresolved ≠ Broken**: An unresolved call simply means it is beyond the scope of local static proof (e.g., depends on runtime configuration).
 
 ---
 
-## 🛠️ Installation
+## Limitations & Safety Guarantees
 
-### Option 1: Install to GOBIN (Recommended)
+- **Preference for False Negatives**: `jz` will skip reporting a dependency or flow step if it is ambiguous, ensuring that every reported item is backed by literal source evidence.
+- **Static Only**: Dynamic logic (reflection, bytecode injection, runtime proxies) is intentionally ignored to maintain audit-level reliability.
+- **Ordered Execution**: Flows are extracted in lexical order. While `jz` captures branches, it does not guarantee runtime execution ordering beyond what is written in the source.
+- **Safety**: As a read-only static analyzer, `jz` is safe to run against production source code without side effects.
+
+---
+
+## Roadmap
+
+### Completed (v1.x)
+- **Phase F4/F5**: Structural analysis and Cross-Service call resolution.
+- **Phase F6.0/F6.1**: Targeted execution flow extraction and UX refinement.
+- **Phase F6.2**: Cross-version flow diffing.
+
+### Possible Future
+- **Auth Propagation**: Tracking security annotations across service boundaries.
+- **Schema Modeling**: Basic mapping of Request/Response POJOs.
+- **Extended AST-lite Heuristics**: Support for simple constant resolution and enhanced pattern matching.
+
+---
+
+## Installation
+
+### From Source
+Requires Go 1.21+
 
 ```bash
 go install ./cmd/jz
 ```
 
-### Option 2: Build Locally
-
-```bash
-mkdir -p bin
-go build -o bin/jz ./cmd/jz
-```
-
----
-
-## 🚀 Usage
-
-```bash
-jz scan .                          # Quick Markdown summary
-jz report markdown .               # Full Markdown report
-jz report mermaid .                # Generate system/component diagrams
-jz report mermaid . --calls        # Generate REST interaction graph
-```
-
-Both `report` commands support `--service` to filter by name and `--output` to save to a file.
-
----
-
-## 🔮 Roadmap
-
-### Phase F4 — Structural Analysis (Implemented)
-- **Outbound REST Call Detection**: Best-effort AST-lite scanning for HTTP client literals.
-- **Internal Service Boundaries**: Detection of structural boundaries (e.g., packages).
-- **REST Interaction Visibility**: Detailed reporting and visualization of resource-level calls.
-
-### Phase F5 — Cross-Service Call Resolution (Implemented)
-- **Automatic Linking**: Unambiguous calls are linked across services by exact path and method match.
-- **Confidence Layer**: Visual encoding of detection confidence (solid vs. dashed arrows).
-- **Evidence Surfacing**: Detailed reporting on why and how a link was established.
-
-### Upcoming
-- **Auth Propagation**: Tracking security context across service calls for risk visibility.
-- **Multi-service Liberty support**: Better modeling of EAR files and sidecar deployments.
-- **Advanced AST-lite heuristics**: Safe evaluation of simple string constants for paths.
-
-Analysis remains conservative and deterministic, preferring false negatives over false positives.
-
----
-
-## 📄 License
-
+## License
 MIT

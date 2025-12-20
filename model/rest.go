@@ -2,7 +2,7 @@ package model
 
 // RESTResource groups JAX-RS entry points by their implementation class.
 type RESTResource struct {
-	Name       string // Resource class name (e.g. TenantApiV1)
+	Name       string // Resource class name (e.g. ExampleApiV1)
 	SourceFile string // Java source file path
 	BasePath   string // Class-level @Path if known
 
@@ -29,6 +29,6 @@ type RESTMethod struct {
 	HTTPMethod string // GET, POST, PUT, DELETE, etc.
 	SubPath    string // Method-level @Path
 	FullPath   string // BasePath + SubPath
-	Handler    string // e.g. TenantApiV1.getTenant
+	Handler    string // e.g. ExampleApiV1.handleExample
 	SourceFile string
 }
