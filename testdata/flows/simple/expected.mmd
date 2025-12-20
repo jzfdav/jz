@@ -1,0 +1,17 @@
+graph TD
+	subgraph Flow_0 [GET /v1/example]
+		F0_S0("Enter: getSimple")
+		F0_S1("((Return: Response.ok("Hello").build()))")
+		F0_S0 -->|RETURN [high]| F0_S1
+		F0_TERM(X "End (Return)")
+		F0_S1 --> F0_TERM
+	end
+
+	%% Legend
+	subgraph Legend
+		l1[Internal Call] --> l2[Next Step]
+		l3[[Outbound Call]] ==> l4[Cross-service Target]
+		l5{{Condition}} -.-> l6[Guarded Path]
+		l7[/ Unexpanded Call /] -.-> l8[End (Unexpanded)]
+	end
+
