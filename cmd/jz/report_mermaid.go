@@ -13,6 +13,7 @@ import (
 var (
 	mermaidService string
 	mermaidOutput  string
+	mermaidCalls   bool
 )
 
 var reportMermaidCmd = &cobra.Command{
@@ -40,14 +41,18 @@ var reportMermaidCmd = &cobra.Command{
 
 		var sb strings.Builder
 
-		// System Level
-		sb.WriteString(report.GenerateSystemMermaid(services, sysGraph))
-		sb.WriteString("\n")
-
-		// Component Level (per service)
-		for _, svc := range services {
-			sb.WriteString(report.GenerateComponentMermaid(svc.InternalGraph))
+		if mermaidCalls {
+			sb.WriteString(report.GenerateCallMermaid(services))
+		} else {
+			// System Level
+			sb.WriteString(report.GenerateSystemMermaid(services, sysGraph))
 			sb.WriteString("\n")
+
+			// Component Level (per service)
+			for _, svc := range services {
+				sb.WriteString(report.GenerateComponentMermaid(svc.InternalGraph))
+				sb.WriteString("\n")
+			}
 		}
 
 		// Output
@@ -61,5 +66,6 @@ var reportMermaidCmd = &cobra.Command{
 func init() {
 	reportMermaidCmd.Flags().StringVar(&mermaidService, "service", "", "Filter by service name")
 	reportMermaidCmd.Flags().StringVar(&mermaidOutput, "output", "", "Write output to file")
+	reportMermaidCmd.Flags().BoolVar(&mermaidCalls, "calls", false, "Generate cross-resource call interaction graph")
 	reportCmd.AddCommand(reportMermaidCmd)
 }

@@ -94,8 +94,72 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 						sb.WriteString(fmt.Sprintf("- %s: %d\n", m, res.HTTPMethods[m]))
 					}
 				}
+
+				// Phase F4: Inbound Calls
+				if len(res.InboundCalls) > 0 {
+					sb.WriteString("\n#### Inbound Calls\n\n")
+					calls := res.InboundCalls
+					sortRESTCalls(calls)
+					for _, call := range calls {
+						sb.WriteString(fmt.Sprintf("- FROM %s/%s.%s\n", call.FromService, call.FromResource, call.FromHandler))
+						sb.WriteString(fmt.Sprintf("  %s %s\n", call.HTTPMethod, call.TargetPath))
+						sb.WriteString(fmt.Sprintf("  Confidence: %s\n", call.Confidence))
+					}
+				}
+
+				// Phase F4: Outbound Calls
+				if len(res.OutboundCalls) > 0 {
+					sb.WriteString("\n#### Outbound Calls\n\n")
+					calls := res.OutboundCalls
+					sortRESTCalls(calls)
+					for _, call := range calls {
+						target := "UNRESOLVED"
+						if call.TargetService != "" {
+							target = fmt.Sprintf("%s/%s", call.TargetService, call.TargetResource)
+						}
+						sb.WriteString(fmt.Sprintf("- TO %s\n", target))
+						sb.WriteString(fmt.Sprintf("  %s %s\n", call.HTTPMethod, call.TargetPath))
+						sb.WriteString(fmt.Sprintf("  Confidence: %s\n", call.Confidence))
+					}
+				}
+
 				sb.WriteString("\n")
 			}
+		}
+
+		// Phase F4: Service Boundaries
+		if len(svc.Boundaries) > 0 {
+			sb.WriteString("### Detected Service Boundaries\n\n")
+			boundaries := svc.Boundaries
+			sort.Slice(boundaries, func(i, j int) bool {
+				if boundaries[i].BoundaryType != boundaries[j].BoundaryType {
+					return boundaries[i].BoundaryType < boundaries[j].BoundaryType
+				}
+				return boundaries[i].Identifier < boundaries[j].Identifier
+			})
+			for _, b := range boundaries {
+				sb.WriteString(fmt.Sprintf("- **%s**: %s\n", b.BoundaryType, b.Identifier))
+				sb.WriteString(fmt.Sprintf("  - Evidence: %s\n", b.Evidence))
+			}
+			sb.WriteString("\n")
+		}
+
+		// Phase F4: REST Call Summary
+		if len(svc.RESTCalls) > 0 {
+			sb.WriteString("### REST Call Summary\n\n")
+			resolved := 0
+			paths := make(map[string]bool)
+			for _, call := range svc.RESTCalls {
+				if call.TargetService != "" {
+					resolved++
+				}
+				paths[call.TargetPath] = true
+			}
+			sb.WriteString(fmt.Sprintf("- Total outbound calls: %d\n", len(svc.RESTCalls)))
+			sb.WriteString(fmt.Sprintf("- Resolved within service: %d\n", resolved))
+			sb.WriteString(fmt.Sprintf("- Unresolved calls: %d\n", len(svc.RESTCalls)-resolved))
+			sb.WriteString(fmt.Sprintf("- Distinct target paths: %d\n", len(paths)))
+			sb.WriteString("\n")
 		}
 
 		sb.WriteString("\n")
@@ -138,4 +202,31 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 	}
 
 	return sb.String()
+}
+
+func sortRESTCalls(calls []model.RESTCall) {
+	confidenceValue := func(c string) int {
+		switch c {
+		case model.ConfidenceHigh:
+			return 3
+		case model.ConfidenceMedium:
+			return 2
+		case model.ConfidenceLow:
+			return 1
+		default:
+			return 0
+		}
+	}
+
+	sort.Slice(calls, func(i, j int) bool {
+		vi := confidenceValue(calls[i].Confidence)
+		vj := confidenceValue(calls[j].Confidence)
+		if vi != vj {
+			return vi > vj
+		}
+		if calls[i].HTTPMethod != calls[j].HTTPMethod {
+			return calls[i].HTTPMethod < calls[j].HTTPMethod
+		}
+		return calls[i].TargetPath < calls[j].TargetPath
+	})
 }

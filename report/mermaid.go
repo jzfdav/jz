@@ -68,12 +68,82 @@ func GenerateComponentMermaid(graph model.DependencyGraph) string {
 	return sb.String()
 }
 
+// GenerateCallMermaid creates a Mermaid graph for REST resource interactions and boundaries.
+func GenerateCallMermaid(services []model.Service) string {
+	var sb strings.Builder
+	sb.WriteString("graph TD\n")
+
+	// 1. Boundaries as subgraphs
+	for _, svc := range services {
+		for _, b := range svc.Boundaries {
+			boundaryID := sanitize(svc.Name + "_" + b.Identifier)
+			sb.WriteString(fmt.Sprintf("\tsubgraph %s [%s: %s]\n", boundaryID, b.BoundaryType, b.Identifier))
+
+			// Group resources by boundary prefix/identifier
+			for _, res := range svc.RESTResources {
+				// Identifiers: packages for OSGi, 'rest-api' for WAR
+				if (b.BoundaryType == "package" && strings.HasPrefix(res.Name, b.Identifier)) ||
+					(b.BoundaryType == "resource-group" && b.Identifier == "rest-api") {
+					resID := sanitize(svc.Name + "_" + res.Name)
+					sb.WriteString(fmt.Sprintf("\t\t%s\n", resID))
+				}
+			}
+			sb.WriteString("\tend\n")
+		}
+	}
+
+	// 2. Resource nodes (ensuring labels are set)
+	for _, svc := range services {
+		for _, res := range svc.RESTResources {
+			resID := sanitize(svc.Name + "_" + res.Name)
+			sb.WriteString(fmt.Sprintf("\t%s[%s]\n", resID, res.Name))
+		}
+	}
+
+	// 3. Edges for calls
+	hasUnknown := false
+	for _, svc := range services {
+		// Outbound calls are already deduplicated per service in Analyze
+		for _, res := range svc.RESTResources {
+			fromID := sanitize(svc.Name + "_" + res.Name)
+			for _, call := range res.OutboundCalls {
+				// Only show calls with high/medium confidence and known methods
+				if call.Confidence == model.ConfidenceLow || call.HTTPMethod == "" {
+					continue
+				}
+
+				toID := "UNKNOWN"
+				arrow := "-.->"
+				if call.TargetService != "" && call.TargetResource != "" {
+					toID = sanitize(call.TargetService + "_" + call.TargetResource)
+					arrow = "-->"
+				}
+
+				if toID == "UNKNOWN" {
+					hasUnknown = true
+				}
+
+				sb.WriteString(fmt.Sprintf("\t%s %s|%s| %s\n", fromID, arrow, call.HTTPMethod, toID))
+			}
+		}
+	}
+
+	if hasUnknown {
+		sb.WriteString("\tUNKNOWN[UNKNOWN]\n")
+	}
+
+	return sb.String()
+}
+
 // sanitize creates a valid Mermaid identifier.
 func sanitize(name string) string {
 	// Replace invalid chars with underscore
-	// internal.MyComponent -> internal_MyComponent
 	s := strings.ReplaceAll(name, ".", "_")
 	s = strings.ReplaceAll(s, "-", "_")
+	s = strings.ReplaceAll(s, "/", "_")
 	s = strings.ReplaceAll(s, " ", "_")
+	s = strings.ReplaceAll(s, "{", "")
+	s = strings.ReplaceAll(s, "}", "")
+	s = strings.ReplaceAll(s, "$", "")
 	return s
 }
