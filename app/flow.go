@@ -70,9 +70,6 @@ func ExtractFlow(services []model.Service, resourceName string, methodFilter str
 
 func scanMethodFlow(sourceFile, className, methodName string, service *model.Service, depth, maxDepth int, visited map[string]bool) []model.FlowStep {
 	fullHandler := fmt.Sprintf("%s.%s", className, methodName)
-	if depth > maxDepth || visited[fullHandler] {
-		return nil
-	}
 	visited[fullHandler] = true
 
 	f, err := os.Open(sourceFile)
@@ -219,18 +216,34 @@ func scanMethodFlow(sourceFile, className, methodName string, service *model.Ser
 				if innerMethod != "" && innerMethod != methodName {
 					// Check if method exists in the same file (simplistic check)
 					if methodExistsInFile(sourceFile, innerMethod) {
-						steps = append(steps, model.FlowStep{
-							Kind:        model.FlowStepCall,
-							Description: fmt.Sprintf("Call internal: %s", innerMethod),
-							FromMethod:  fullHandler,
-							ToMethod:    fmt.Sprintf("%s.%s", className, innerMethod),
-							Confidence:  model.ConfidenceMedium,
-							Evidence:    fmt.Sprintf("%s:%d", sourceFile, lineNum),
-						})
+						targetHandler := fmt.Sprintf("%s.%s", className, innerMethod)
+						if depth < maxDepth && !visited[targetHandler] {
+							steps = append(steps, model.FlowStep{
+								Kind:        model.FlowStepCall,
+								Description: fmt.Sprintf("Call internal: %s", innerMethod),
+								FromMethod:  fullHandler,
+								ToMethod:    targetHandler,
+								Confidence:  model.ConfidenceMedium,
+								Evidence:    fmt.Sprintf("%s:%d", sourceFile, lineNum),
+							})
 
-						// Recurse
-						innerSteps := scanMethodFlow(sourceFile, className, innerMethod, service, depth+1, maxDepth, visited)
-						steps = append(steps, innerSteps...)
+							// Recurse
+							innerSteps := scanMethodFlow(sourceFile, className, innerMethod, service, depth+1, maxDepth, visited)
+							steps = append(steps, innerSteps...)
+						} else {
+							reason := "depth limit"
+							if visited[targetHandler] {
+								reason = "already visited / potential cycle"
+							}
+							steps = append(steps, model.FlowStep{
+								Kind:        model.FlowStepUnexpanded,
+								Description: fmt.Sprintf("Call internal: %s (unexpanded - %s)", innerMethod, reason),
+								FromMethod:  fullHandler,
+								ToMethod:    targetHandler,
+								Confidence:  model.ConfidenceHigh,
+								Evidence:    fmt.Sprintf("%s:%d", sourceFile, lineNum),
+							})
+						}
 					}
 				}
 			}

@@ -16,6 +16,7 @@ var (
 	flowMaxDepth int
 	flowFormat   string
 	flowOutput   string
+	flowCompact  bool
 )
 
 var flowCmd = &cobra.Command{
@@ -42,10 +43,10 @@ var flowCmd = &cobra.Command{
 		case "markdown":
 			output = report.GenerateFlowMarkdown(flows, flowResource, flowPath)
 		case "mermaid":
-			output = report.GenerateFlowMermaid(flows, flowResource)
+			output = report.GenerateFlowMermaid(flows, flowResource, flowCompact)
 		case "all":
 			md := report.GenerateFlowMarkdown(flows, flowResource, flowPath)
-			mmd := report.GenerateFlowMermaid(flows, flowResource)
+			mmd := report.GenerateFlowMermaid(flows, flowResource, flowCompact)
 			output = md + "\n\n---\n\n" + mmd
 		default:
 			fmt.Fprintf(os.Stderr, "Error: invalid format '%s'\n", flowFormat)
@@ -72,6 +73,7 @@ func init() {
 	flowCmd.Flags().IntVar(&flowMaxDepth, "max-depth", 3, "Limit call expansion depth")
 	flowCmd.Flags().StringVar(&flowFormat, "format", "markdown", "Output format: markdown|mermaid|all")
 	flowCmd.Flags().StringVar(&flowOutput, "output", "", "Output file path")
+	flowCmd.Flags().BoolVar(&flowCompact, "compact", false, "Enable visual-only guard chain compaction in Mermaid diagrams")
 
 	rootCmd.AddCommand(flowCmd)
 }

@@ -11,11 +11,12 @@ type ExecutionFlow struct {
 type FlowStepKind string
 
 const (
-	FlowStepEntry     FlowStepKind = "entry"
-	FlowStepCondition FlowStepKind = "condition"
-	FlowStepCall      FlowStepKind = "call"
-	FlowStepOutbound  FlowStepKind = "outbound"
-	FlowStepReturn    FlowStepKind = "return"
+	FlowStepEntry      FlowStepKind = "entry"
+	FlowStepCondition  FlowStepKind = "condition"
+	FlowStepCall       FlowStepKind = "call"
+	FlowStepOutbound   FlowStepKind = "outbound"
+	FlowStepReturn     FlowStepKind = "return"
+	FlowStepUnexpanded FlowStepKind = "unexpanded"
 )
 
 // FlowStep represents a single step in an execution flow.
