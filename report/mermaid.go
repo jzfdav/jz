@@ -87,7 +87,7 @@ func GenerateCallMermaid(services []model.Service) string {
 				if (b.BoundaryType == "package" && strings.HasPrefix(res.Name, b.Identifier)) ||
 					(b.BoundaryType == "resource-group" && b.Identifier == "rest-api") {
 					resID := sanitize(svc.Name + "_" + res.Name)
-					sb.WriteString(fmt.Sprintf("\t\t%s\n", resID))
+					sb.WriteString(fmt.Sprintf("\t\t%s[%s]\n", resID, res.Name))
 					emittedNodes[resID] = true
 				}
 			}
@@ -102,10 +102,6 @@ func GenerateCallMermaid(services []model.Service) string {
 			if !emittedNodes[resID] {
 				sb.WriteString(fmt.Sprintf("\t%s[%s]\n", resID, res.Name))
 				emittedNodes[resID] = true
-			} else {
-				// Even if already emitted in a subgraph, we apply the label here to be safe
-				// Mermaid uses the first definition for the label.
-				sb.WriteString(fmt.Sprintf("\t%s[%s]\n", resID, res.Name))
 			}
 		}
 	}
