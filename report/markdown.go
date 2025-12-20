@@ -103,7 +103,8 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 					for _, call := range calls {
 						sb.WriteString(fmt.Sprintf("- FROM %s/%s.%s\n", call.FromService, call.FromResource, call.FromHandler))
 						sb.WriteString(fmt.Sprintf("  %s %s\n", call.HTTPMethod, call.TargetPath))
-						sb.WriteString(fmt.Sprintf("  Confidence: %s\n", call.Confidence))
+						sb.WriteString(fmt.Sprintf("  Confidence: %s | Detection: %s\n", call.Confidence, call.DetectionType))
+						sb.WriteString(fmt.Sprintf("  File: %s\n", call.SourceFile))
 					}
 				}
 
@@ -119,7 +120,9 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 						}
 						sb.WriteString(fmt.Sprintf("- TO %s\n", target))
 						sb.WriteString(fmt.Sprintf("  %s %s\n", call.HTTPMethod, call.TargetPath))
-						sb.WriteString(fmt.Sprintf("  Confidence: %s\n", call.Confidence))
+						sb.WriteString(fmt.Sprintf("  Confidence: %s | Detection: %s\n", call.Confidence, call.DetectionType))
+						sb.WriteString(fmt.Sprintf("  Source: %s/%s.%s\n", call.FromService, call.FromResource, call.FromHandler))
+						sb.WriteString(fmt.Sprintf("  File: %s\n", call.SourceFile))
 					}
 				}
 
@@ -148,17 +151,37 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 		if len(svc.RESTCalls) > 0 {
 			sb.WriteString("### REST Call Summary\n\n")
 			resolved := 0
+			confCounts := make(map[string]int)
+			detCounts := make(map[string]int)
 			paths := make(map[string]bool)
+
 			for _, call := range svc.RESTCalls {
 				if call.TargetService != "" {
 					resolved++
 				}
+				confCounts[call.Confidence]++
+				detCounts[call.DetectionType]++
 				paths[call.TargetPath] = true
 			}
+
 			sb.WriteString(fmt.Sprintf("- Total outbound calls: %d\n", len(svc.RESTCalls)))
 			sb.WriteString(fmt.Sprintf("- Resolved within service: %d\n", resolved))
 			sb.WriteString(fmt.Sprintf("- Unresolved calls: %d\n", len(svc.RESTCalls)-resolved))
 			sb.WriteString(fmt.Sprintf("- Distinct target paths: %d\n", len(paths)))
+
+			sb.WriteString("- Confidence breakdown:\n")
+			for _, c := range []string{model.ConfidenceHigh, model.ConfidenceMedium, model.ConfidenceLow} {
+				sb.WriteString(fmt.Sprintf("  - %s: %d\n", c, confCounts[c]))
+			}
+
+			sb.WriteString("- Detection breakdown:\n")
+			for _, d := range []string{model.DetectionLiteral, model.DetectionConstant, model.DetectionUnknown} {
+				sb.WriteString(fmt.Sprintf("  - %s: %d\n", d, detCounts[d]))
+			}
+
+			if resolved < len(svc.RESTCalls) {
+				sb.WriteString("\n*Note: This tool performs AST-lite static analysis. Calls may remain unresolved due to dynamic URL construction, variables, or cross-service boundaries not yet modeled.*\n")
+			}
 			sb.WriteString("\n")
 		}
 

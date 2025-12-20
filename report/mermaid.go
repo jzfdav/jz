@@ -108,6 +108,7 @@ func GenerateCallMermaid(services []model.Service) string {
 
 	// 3. Edges for calls
 	hasUnknown := false
+	hasCalls := false
 	for _, svc := range services {
 		// Outbound calls are already deduplicated per service in Analyze
 		for _, res := range svc.RESTResources {
@@ -120,24 +121,40 @@ func GenerateCallMermaid(services []model.Service) string {
 					continue
 				}
 
+				hasCalls = true
 				toID := "UNKNOWN"
-				arrow := "-.->"
+				// Style arrow based on confidence
+				// High: solid (-->), Medium: dashed (-.->)
+				arrow := "-->"
+				if call.Confidence == model.ConfidenceMedium {
+					arrow = "-.->"
+				}
+
 				if call.TargetService != "" && call.TargetResource != "" {
 					toID = sanitize(call.TargetService + "_" + call.TargetResource)
-					arrow = "-->"
+				} else {
+					// Unresolved calls use dashed arrow even if high confidence (best effort)
+					arrow = "-.->"
 				}
 
 				if toID == "UNKNOWN" {
 					hasUnknown = true
 				}
 
-				sb.WriteString(fmt.Sprintf("\t%s %s|%s| %s\n", fromID, arrow, call.HTTPMethod, toID))
+				sb.WriteString(fmt.Sprintf("\t%s %s|%s [%s]| %s\n", fromID, arrow, call.HTTPMethod, call.Confidence, toID))
 			}
 		}
 	}
 
 	if hasUnknown {
 		sb.WriteString("\tUNKNOWN[UNKNOWN]\n")
+	}
+
+	if hasCalls {
+		sb.WriteString("\n\t%% Legend:\n")
+		sb.WriteString("\t%% Solid edge (-->)   = High confidence\n")
+		sb.WriteString("\t%% Dashed edge (-.->)  = Medium confidence or Unresolved\n")
+		sb.WriteString("\t%% Labels include HTTP method and [confidence]\n")
 	}
 
 	return sb.String()
