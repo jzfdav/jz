@@ -141,13 +141,20 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph, Diagnostic) {
 		svc.RESTResources = groupRESTResources(svc.EntryPoints)
 
 		// Phase F4: Detect Outbound Calls
+		callMap := make(map[string]bool)
 		for _, res := range svc.RESTResources {
 			for _, ep := range res.EntryPoints {
 				parts := strings.Split(ep.Handler, ".")
 				if len(parts) > 1 {
 					methodName := parts[1]
 					calls := scanOutboundCalls(ep.SourceFile, methodName, svc.Name, res.Name)
-					svc.RESTCalls = append(svc.RESTCalls, calls...)
+					for _, call := range calls {
+						key := fmt.Sprintf("%s|%s|%s", methodName, call.HTTPMethod, call.TargetPath)
+						if !callMap[key] {
+							svc.RESTCalls = append(svc.RESTCalls, call)
+							callMap[key] = true
+						}
+					}
 				}
 			}
 		}
@@ -224,13 +231,20 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph, Diagnostic) {
 			svc.RESTResources = groupRESTResources(svc.EntryPoints)
 
 			// Phase F4: Detect Outbound Calls
+			callMap := make(map[string]bool)
 			for _, res := range svc.RESTResources {
 				for _, ep := range res.EntryPoints {
 					parts := strings.Split(ep.Handler, ".")
 					if len(parts) > 1 {
 						methodName := parts[1]
 						calls := scanOutboundCalls(ep.SourceFile, methodName, svc.Name, res.Name)
-						svc.RESTCalls = append(svc.RESTCalls, calls...)
+						for _, call := range calls {
+							key := fmt.Sprintf("%s|%s|%s", methodName, call.HTTPMethod, call.TargetPath)
+							if !callMap[key] {
+								svc.RESTCalls = append(svc.RESTCalls, call)
+								callMap[key] = true
+							}
+						}
 					}
 				}
 			}
@@ -332,7 +346,12 @@ type resourceMeta struct {
 // This is an AST-lite scan: it collects annotations before the class declaration
 // and aggregates method-level annotations found throughout the file.
 //
-// Limitations:
+// Limitations (AST-lite):
+//   - Line-based scanning: Does not understand multi-line statements or complex expressions.
+//   - No variable resolution: Only literal values are extracted.
+//   - No control-flow analysis: Cannot determine if code is reachable.
+//   - No constant evaluation: Constants (e.g., MediaType.APPLICATION_JSON) are not resolved.
+//   - False negatives preferred: If parsing is ambiguous, items are skipped to avoid incorrect data.
 //   - Media-type parsing (@Consumes, @Produces) only supports literal string values.
 //     Array-based ({...}) or constant-based declarations are not supported.
 func scanResourceMetadata(javaFilePath string, className string) resourceMeta {
@@ -475,6 +494,13 @@ func joinPaths(base, sub string) string {
 }
 
 // scanOutboundCalls performs an AST-lite scan of a Java method to find outbound REST calls.
+//
+// Limitations (AST-lite):
+// - Line-based scanning: Scans within detected method boundaries.
+// - No variable resolution: Target URLs must be string literals.
+// - No control-flow analysis: All detected calls are recorded regardless of execution path.
+// - No constant evaluation: Parameterized or constant-based URLs are skipped (Confidence: Low).
+// - False negatives preferred: Ambiguous or complex call patterns are intentionally ignored.
 func scanOutboundCalls(sourceFile, methodName, fromService, fromResource string) []model.RESTCall {
 	f, err := os.Open(sourceFile)
 	if err != nil {
