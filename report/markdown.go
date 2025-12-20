@@ -205,22 +205,9 @@ func GenerateMarkdown(services []model.Service, sysGraph model.SystemGraph, diag
 }
 
 func sortRESTCalls(calls []model.RESTCall) {
-	confidenceValue := func(c string) int {
-		switch c {
-		case model.ConfidenceHigh:
-			return 3
-		case model.ConfidenceMedium:
-			return 2
-		case model.ConfidenceLow:
-			return 1
-		default:
-			return 0
-		}
-	}
-
 	sort.Slice(calls, func(i, j int) bool {
-		vi := confidenceValue(calls[i].Confidence)
-		vj := confidenceValue(calls[j].Confidence)
+		vi := confidenceRank(calls[i].Confidence)
+		vj := confidenceRank(calls[j].Confidence)
 		if vi != vj {
 			return vi > vj
 		}
@@ -229,4 +216,18 @@ func sortRESTCalls(calls []model.RESTCall) {
 		}
 		return calls[i].TargetPath < calls[j].TargetPath
 	})
+}
+
+// confidenceRank returns a numeric rank for a confidence string to simplify sorting.
+func confidenceRank(c string) int {
+	switch c {
+	case model.ConfidenceHigh:
+		return 3
+	case model.ConfidenceMedium:
+		return 2
+	case model.ConfidenceLow:
+		return 1
+	default:
+		return 0
+	}
 }

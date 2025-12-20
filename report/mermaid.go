@@ -73,6 +73,8 @@ func GenerateCallMermaid(services []model.Service) string {
 	var sb strings.Builder
 	sb.WriteString("graph TD\n")
 
+	emittedNodes := make(map[string]bool)
+
 	// 1. Boundaries as subgraphs
 	for _, svc := range services {
 		for _, b := range svc.Boundaries {
@@ -86,17 +88,25 @@ func GenerateCallMermaid(services []model.Service) string {
 					(b.BoundaryType == "resource-group" && b.Identifier == "rest-api") {
 					resID := sanitize(svc.Name + "_" + res.Name)
 					sb.WriteString(fmt.Sprintf("\t\t%s\n", resID))
+					emittedNodes[resID] = true
 				}
 			}
 			sb.WriteString("\tend\n")
 		}
 	}
 
-	// 2. Resource nodes (ensuring labels are set)
+	// 2. Resource nodes (ensuring labels are set for all, including those not in subgraphs)
 	for _, svc := range services {
 		for _, res := range svc.RESTResources {
 			resID := sanitize(svc.Name + "_" + res.Name)
-			sb.WriteString(fmt.Sprintf("\t%s[%s]\n", resID, res.Name))
+			if !emittedNodes[resID] {
+				sb.WriteString(fmt.Sprintf("\t%s[%s]\n", resID, res.Name))
+				emittedNodes[resID] = true
+			} else {
+				// Even if already emitted in a subgraph, we apply the label here to be safe
+				// Mermaid uses the first definition for the label.
+				sb.WriteString(fmt.Sprintf("\t%s[%s]\n", resID, res.Name))
+			}
 		}
 	}
 
@@ -107,7 +117,9 @@ func GenerateCallMermaid(services []model.Service) string {
 		for _, res := range svc.RESTResources {
 			fromID := sanitize(svc.Name + "_" + res.Name)
 			for _, call := range res.OutboundCalls {
-				// Only show calls with high/medium confidence and known methods
+				// Intentional filtering: only show calls with high/medium confidence.
+				// Low-confidence calls (e.g. partial AST matches or unresolved variables)
+				// are omitted to prevent misleading "noise" in the visualization.
 				if call.Confidence == model.ConfidenceLow || call.HTTPMethod == "" {
 					continue
 				}
