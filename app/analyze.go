@@ -141,6 +141,7 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph, Diagnostic) {
 		svc.RESTResources = groupRESTResources(svc.EntryPoints)
 
 		// Phase F4: Detect Outbound Calls
+		// Deduplicate outbound REST calls within a single service
 		callMap := make(map[string]bool)
 		for _, res := range svc.RESTResources {
 			for _, ep := range res.EntryPoints {
@@ -149,7 +150,7 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph, Diagnostic) {
 					methodName := parts[1]
 					calls := scanOutboundCalls(ep.SourceFile, methodName, svc.Name, res.Name)
 					for _, call := range calls {
-						key := fmt.Sprintf("%s|%s|%s", methodName, call.HTTPMethod, call.TargetPath)
+						key := restCallKey(methodName, call)
 						if !callMap[key] {
 							svc.RESTCalls = append(svc.RESTCalls, call)
 							callMap[key] = true
@@ -231,6 +232,7 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph, Diagnostic) {
 			svc.RESTResources = groupRESTResources(svc.EntryPoints)
 
 			// Phase F4: Detect Outbound Calls
+			// Deduplicate outbound REST calls within a single service
 			callMap := make(map[string]bool)
 			for _, res := range svc.RESTResources {
 				for _, ep := range res.EntryPoints {
@@ -239,7 +241,7 @@ func Analyze(rootDir string) ([]model.Service, model.SystemGraph, Diagnostic) {
 						methodName := parts[1]
 						calls := scanOutboundCalls(ep.SourceFile, methodName, svc.Name, res.Name)
 						for _, call := range calls {
-							key := fmt.Sprintf("%s|%s|%s", methodName, call.HTTPMethod, call.TargetPath)
+							key := restCallKey(methodName, call)
 							if !callMap[key] {
 								svc.RESTCalls = append(svc.RESTCalls, call)
 								callMap[key] = true
@@ -347,13 +349,12 @@ type resourceMeta struct {
 // and aggregates method-level annotations found throughout the file.
 //
 // Limitations (AST-lite):
-//   - Line-based scanning: Does not understand multi-line statements or complex expressions.
-//   - No variable resolution: Only literal values are extracted.
-//   - No control-flow analysis: Cannot determine if code is reachable.
-//   - No constant evaluation: Constants (e.g., MediaType.APPLICATION_JSON) are not resolved.
-//   - False negatives preferred: If parsing is ambiguous, items are skipped to avoid incorrect data.
-//   - Media-type parsing (@Consumes, @Produces) only supports literal string values.
-//     Array-based ({...}) or constant-based declarations are not supported.
+// - Line-based scanning: Does not understand multi-line statements or complex expressions.
+// - No variable resolution: Only literal values are extracted.
+// - No control-flow analysis: Cannot determine if code is reachable.
+// - No constant evaluation: Constants (e.g., MediaType.APPLICATION_JSON) are not resolved.
+// - False negatives preferred: Items are skipped if parsing is ambiguous (favors safety over completeness).
+// - Media-type parsing (@Consumes, @Produces) only supports literal string values.
 func scanResourceMetadata(javaFilePath string, className string) resourceMeta {
 	f, err := os.Open(javaFilePath)
 	if err != nil {
@@ -631,4 +632,9 @@ func linkCallsToResources(services []model.Service) {
 			})
 		}
 	}
+}
+
+// restCallKey generates a unique key for deduplicating outbound calls within a service.
+func restCallKey(methodName string, call model.RESTCall) string {
+	return fmt.Sprintf("%s|%s|%s", methodName, call.HTTPMethod, call.TargetPath)
 }
